@@ -1,87 +1,53 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from './api.service';
-import { AdminDashboard, Student, Professor, Department, Course, SystemLog, PaginatedData } from '../../shared/models';
 
 @Injectable({ providedIn: 'root' })
 export class AdminApiService extends ApiService {
   constructor(http: HttpClient) { super(http); }
 
-  getDashboard() {
-    return this.get<AdminDashboard>('/admin/dashboard');
-  }
+  getDashboard()                      { return this.get<any>('/admin/dashboard'); }
 
-  getStudents(page = 1, limit = 20, search = '') {
-    return this.get<PaginatedData<Student>>('/admin/students', { page, limit, search });
-  }
-
-  getStudentById(id: number) {
-    return this.get<Student>(`/admin/students/${id}`);
-  }
-
+  // Students
+  getStudents(params: any = {})       { return this.get<any>('/admin/students', params); }
+  getStudentById(id: number)          { return this.get<any>(`/admin/students/${id}`); }
+  getStudentSchedule(id: number)      { return this.get<any>(`/admin/students/${id}/schedule`); }
   updateStudentStatus(id: number, is_active: boolean) {
     return this.patch(`/admin/students/${id}/status`, { is_active });
   }
 
-  getProfessors(page = 1, limit = 20, search = '', dept_id?: number) {
-    return this.get<PaginatedData<Professor>>('/admin/professors', { page, limit, search, ...(dept_id ? { dept_id } : {}) });
-  }
-
-  getDepartments() {
-    return this.get<Department[]>('/admin/departments');
-  }
-
-  createDepartment(body: { name: string; location: string }) {
-    return this.post<Department>('/admin/departments', body);
-  }
-
-  updateDepartment(id: number, body: Partial<Department>) {
-    return this.put<Department>(`/admin/departments/${id}`, body);
-  }
-
-  deleteDepartment(id: number) {
-    return this.delete(`/admin/departments/${id}`);
-  }
-
-  getCourses(page = 1, limit = 20, search = '', dept_id?: number) {
-    return this.get<PaginatedData<Course>>('/admin/courses', { page, limit, search, ...(dept_id ? { dept_id } : {}) });
-  }
-
-  createCourse(body: Partial<Course>) {
-    return this.post<Course>('/admin/courses', body);
-  }
-
-  updateCourse(id: number, body: Partial<Course>) {
-    return this.put<Course>(`/admin/courses/${id}`, body);
-  }
-
-  deleteCourse(id: number) {
-    return this.delete(`/admin/courses/${id}`);
-  }
-
-  getSystemLogs(page = 1, limit = 50) {
-    return this.get<PaginatedData<SystemLog>>('/admin/logs', { page, limit });
-  }
-}
-
-  // Student schedule popup
-  getStudentSchedule(studentId: number) {
-    return this.api.get(`/admin/students/${studentId}/schedule`);
-  }
-
   // User CRUD
-  createUser(body: any) { return this.api.post('/admin/users', body); }
-  updateUser(userId: number, body: any) { return this.api.put(`/admin/users/${userId}`, body); }
-  deleteUser(userId: number) { return this.api.delete(`/admin/users/${userId}`); }
-  adminResetPassword(userId: number, newPassword: string) {
-    return this.api.patch(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
+  createUser(body: any)               { return this.post<any>('/admin/users', body); }
+  updateUser(id: number, body: any)   { return this.put<any>(`/admin/users/${id}`, body); }
+  deleteUser(id: number)              { return this.delete<any>(`/admin/users/${id}`); }
+  adminResetPassword(id: number, newPassword: string) {
+    return this.patch(`/admin/users/${id}/reset-password`, { new_password: newPassword });
   }
 
-  // Password reset requests
-  getPasswordResetRequests() { return this.api.get('/admin/password-reset-requests'); }
+  // Password Reset Requests
+  getPasswordResetRequests()          { return this.get<any>('/admin/password-reset-requests'); }
   approvePasswordReset(requestId: number, newPassword: string) {
-    return this.api.post(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
+    return this.post<any>(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
   }
   rejectPasswordReset(requestId: number) {
-    return this.api.post(`/admin/password-reset-requests/${requestId}/reject`, {});
+    return this.post<any>(`/admin/password-reset-requests/${requestId}/reject`, {});
   }
+
+  // Professors
+  getProfessors(params: any = {})     { return this.get<any>('/admin/professors', params); }
+
+  // Departments
+  getDepartments()                    { return this.get<any>('/admin/departments'); }
+  createDepartment(body: any)         { return this.post<any>('/admin/departments', body); }
+  updateDepartment(id: number, body: any) { return this.put<any>(`/admin/departments/${id}`, body); }
+  deleteDepartment(id: number)        { return this.delete<any>(`/admin/departments/${id}`); }
+
+  // Courses
+  getCourses(params: any = {})        { return this.get<any>('/admin/courses', params); }
+  createCourse(body: any)             { return this.post<any>('/admin/courses', body); }
+  updateCourse(id: number, body: any) { return this.put<any>(`/admin/courses/${id}`, body); }
+  deleteCourse(id: number)            { return this.delete<any>(`/admin/courses/${id}`); }
+
+  // System Logs
+  getSystemLogs(params: any = {})     { return this.get<any>('/admin/logs', params); }
+}

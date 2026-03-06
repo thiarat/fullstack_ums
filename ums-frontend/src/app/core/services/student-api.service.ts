@@ -18,8 +18,3 @@ export class StudentApiService extends ApiService {
   getBorrowedBooks()           { return this.get<LibraryRecord[]>('/student/library/borrowed'); }
   searchBooks(search = '', page = 1) { return this.get<Book[]>('/student/library/books', { search, page }); }
 }
-
-  // Professor schedule (เผื่อใช้)
-  forgotPassword(username: string) {
-    return this.api.post('/auth/forgot-password', { username });
-  }
