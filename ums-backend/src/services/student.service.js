@@ -279,7 +279,7 @@ const searchBooks = async ({ search = '', dept = '', available = false }) => {
 const getMyBorrowedBooks = async (studentId) => {
   const result = await db.query(
     `SELECT lr.record_id, lr.borrow_date, lr.due_date, lr.return_date, lr.fine_amount, lr.status,
-            b.title, b.author, b.isbn,
+            b.title as book_title, b.author, b.isbn,
             CASE
               WHEN lr.return_date IS NULL AND CURRENT_DATE > lr.due_date
               THEN (CURRENT_DATE - lr.due_date) * (SELECT fine_per_day FROM library_settings LIMIT 1)
