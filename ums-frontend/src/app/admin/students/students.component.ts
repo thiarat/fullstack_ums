@@ -2,19 +2,12 @@ import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminApiService } from '../../core/services/admin-api.service';
-import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
-import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 
 @Component({
   selector: 'app-admin-students',
   standalone: true,
-  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent],
+  imports: [CommonModule, FormsModule],
   template: `
-<div class="app-layout">
-  <app-sidebar />
-  <div class="main-content">
-  <app-topbar title="จัดการนักศึกษา" subtitle="ผู้ใช้ในระบบ" />
-  <div class="page-content">
 <div class="page-container">
   <div class="page-header">
     <div>
@@ -133,9 +126,6 @@ import { TopbarComponent } from '../../shared/components/topbar/topbar.component
       </div>
     </div>
   }
-</div>
-</div>
-</div>
 </div>
 
 <!-- ── SCHEDULE POPUP ────────────────────────────────────────── -->
@@ -320,7 +310,7 @@ export class StudentsComponent implements OnInit {
 
   loadStudents() {
     this.loading.set(true);
-    this.api.getStudents(this.currentPage(), 20, this.searchQuery).subscribe({
+    this.api.getStudents({ page: this.currentPage(), limit: 20, search: this.searchQuery }).subscribe({
       next: (r: any) => { this.students.set(r.data.data); this.total.set(r.data.total); this.loading.set(false); },
       error: () => this.loading.set(false),
     });

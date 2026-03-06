@@ -10,23 +10,36 @@ const swaggerSpec = require('./config/swagger');
 const requestLogger = require('./middlewares/logger.middleware');
 const { errorHandler, notFound } = require('./middlewares/error.middleware');
 
-// Routes
-const authRoutes = require('./routes/auth.routes');
-const adminRoutes = require('./routes/admin.routes');
-const studentRoutes = require('./routes/student.routes');
+const authRoutes      = require('./routes/auth.routes');
+const adminRoutes     = require('./routes/admin.routes');
+const studentRoutes   = require('./routes/student.routes');
 const professorRoutes = require('./routes/professor.routes');
-const libraryRoutes = require('./routes/library.routes');
+const libraryRoutes   = require('./routes/library.routes');
 
-// Ensure logs directory exists
-const logsDir = path.join(__dirname, '../logs');
-if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+// Create logs dir only in non-serverless environments
+if (process.env.NODE_ENV !== 'production') {
+  const logsDir = path.join(__dirname, '../logs');
+  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Middlewares ────────────────────────────────────────────
+// ─── CORS ───────────────────────────────────────────────────
+const allowedOrigins = [
+  'http://localhost:4200',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+  origin: (origin, callback) => {
+    // allow requests with no origin (mobile apps, Swagger, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -36,14 +49,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
-// ─── API Docs ───────────────────────────────────────────────
+// ─── API Docs (local only) ───────────────────────────────────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui.min.css',
   customSiteTitle: 'UMS API Documentation',
-  swaggerOptions: {
-    persistAuthorization: true,
-    displayRequestDuration: true,
-  },
+  swaggerOptions: { persistAuthorization: true, displayRequestDuration: true },
 }));
 
 app.get('/api-docs.json', (req, res) => {
@@ -51,35 +60,34 @@ app.get('/api-docs.json', (req, res) => {
   res.send(swaggerSpec);
 });
 
-// ─── Health Check ───────────────────────────────────────────
+// ─── Health Check ────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
     success: true,
     message: 'UMS API is running',
-    version: '1.0.0',
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
   });
 });
 
-// ─── Routes ─────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/student', studentRoutes);
+// ─── Routes ──────────────────────────────────────────────────
+app.use('/api/auth',      authRoutes);
+app.use('/api/admin',     adminRoutes);
+app.use('/api/student',   studentRoutes);
 app.use('/api/professor', professorRoutes);
-app.use('/api/library', libraryRoutes);
+app.use('/api/library',   libraryRoutes);
 
 // ─── 404 & Error Handler ────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
-// ─── Start Server ───────────────────────────────────────────
-app.listen(PORT, () => {
-  logger.info(`🚀 UMS API Server started`);
-  logger.info(`   Environment : ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`   Port        : ${PORT}`);
-  logger.info(`   API Docs    : http://localhost:${PORT}/api-docs`);
-  logger.info(`   Health      : http://localhost:${PORT}/health`);
-});
+// ─── Start Server (local only — Vercel uses module.exports) ─
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    logger.info(`UMS API Server started — http://localhost:${PORT}`);
+    logger.info(`API Docs: http://localhost:${PORT}/api-docs`);
+  });
+}
 
 module.exports = app;

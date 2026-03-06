@@ -2,8 +2,6 @@ import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ProfessorApiService } from '../../core/services/professor-api.service';
-import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
-import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DAY_TH: Record<string,string> = {
@@ -14,13 +12,8 @@ const DAY_TH: Record<string,string> = {
 @Component({
   selector: 'app-professor-courses',
   standalone: true,
-  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent],
+  imports: [CommonModule, FormsModule],
   template: `
-<div class="app-layout">
-  <app-sidebar />
-  <div class="main-content">
-  <app-topbar title="รายวิชาของฉัน" subtitle="จัดการตารางสอน" />
-  <div class="page-content">
 <div class="page-container">
   <div class="page-header">
     <div>
@@ -73,9 +66,6 @@ const DAY_TH: Record<string,string> = {
       }
     </div>
   }
-</div>
-</div>
-</div>
 </div>
 
 <!-- ── STUDENTS MODAL ──────────────────────────────────────── -->

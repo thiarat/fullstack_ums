@@ -1,19 +1,12 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StudentApiService } from '../../core/services/student-api.service';
-import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
-import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 
 @Component({
   selector: 'app-student-dashboard',
   standalone: true,
-  imports: [CommonModule, SidebarComponent, TopbarComponent],
+  imports: [CommonModule],
   template: `
-<div class="app-layout">
-  <app-sidebar />
-  <div class="main-content">
-  <app-topbar title="Dashboard" subtitle="ภาพรวมการเรียน" />
-  <div class="page-content">
 <div class="page-container">
   <div class="page-header">
     <div>
@@ -89,9 +82,6 @@ import { TopbarComponent } from '../../shared/components/topbar/topbar.component
       </div>
     </div>
   }
-</div>
-</div>
-</div>
 </div>
   `,
   styles: [`

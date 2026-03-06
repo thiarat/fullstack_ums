@@ -392,7 +392,7 @@ export class LoginComponent {
 
   get f() { return this.form.controls; }
 
-  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router, private http: HttpClient) {}
+  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router) {}
 
   onLogin() {
     this.submitted = true;

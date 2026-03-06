@@ -62,23 +62,26 @@ export class AdminApiService extends ApiService {
   getSystemLogs(page = 1, limit = 50) {
     return this.get<PaginatedData<SystemLog>>('/admin/logs', { page, limit });
   }
+}
 
+  // Student schedule popup
   getStudentSchedule(studentId: number) {
-    return this.get(`/admin/students/${studentId}/schedule`);
+    return this.api.get(`/admin/students/${studentId}/schedule`);
   }
 
-  createUser(body: any) { return this.post('/admin/users', body); }
-  updateUser(userId: number, body: any) { return this.put(`/admin/users/${userId}`, body); }
-  deleteUser(userId: number) { return this.delete(`/admin/users/${userId}`); }
+  // User CRUD
+  createUser(body: any) { return this.api.post('/admin/users', body); }
+  updateUser(userId: number, body: any) { return this.api.put(`/admin/users/${userId}`, body); }
+  deleteUser(userId: number) { return this.api.delete(`/admin/users/${userId}`); }
   adminResetPassword(userId: number, newPassword: string) {
-    return this.patch(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
+    return this.api.patch(`/admin/users/${userId}/reset-password`, { new_password: newPassword });
   }
 
-  getPasswordResetRequests() { return this.get('/admin/password-reset-requests'); }
+  // Password reset requests
+  getPasswordResetRequests() { return this.api.get('/admin/password-reset-requests'); }
   approvePasswordReset(requestId: number, newPassword: string) {
-    return this.post(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
+    return this.api.post(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
   }
   rejectPasswordReset(requestId: number) {
-    return this.post(`/admin/password-reset-requests/${requestId}/reject`, {});
+    return this.api.post(`/admin/password-reset-requests/${requestId}/reject`, {});
   }
-}

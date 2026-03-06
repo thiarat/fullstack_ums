@@ -1,4 +1,4 @@
-import { Component, signal, OnInit } from '@angular/core';
+import { Component, signal,, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -88,7 +88,6 @@ export class StudentEnrollmentsComponent implements OnInit {
   tab = signal<'my'|'available'>('my');
   enrollments = signal<any[]>([]);
   available = signal<any[]>([]);
-  conflictError = signal('');
   semester = '1/2567';
 
   constructor(private api: StudentApiService) {}
