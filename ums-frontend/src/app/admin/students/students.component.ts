@@ -1,14 +1,20 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
+import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 import { FormsModule } from '@angular/forms';
 import { AdminApiService } from '../../core/services/admin-api.service';
 
 @Component({
   selector: 'app-admin-students',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent],
   template: `
-<div class="page-container">
+    <div class="app-layout">
+      <app-sidebar />
+      <div class="main-content">
+        <app-topbar title="จัดการนักศึกษา" subtitle="รายชื่อนักศึกษาทั้งหมด" />
+        <div class="page-content">
   <div class="page-header">
     <div>
       <h1 class="page-title">จัดการนักศึกษา</h1>
@@ -239,6 +245,8 @@ import { AdminApiService } from '../../core/services/admin-api.service';
     </div>
   </div>
 }
+      </div>
+    </div>
   `,
   styles: [`
     .clickable-row { cursor: pointer; }

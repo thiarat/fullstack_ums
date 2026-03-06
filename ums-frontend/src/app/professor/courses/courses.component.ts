@@ -1,5 +1,7 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
+import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 import { FormsModule } from '@angular/forms';
 import { ProfessorApiService } from '../../core/services/professor-api.service';
 
@@ -12,9 +14,13 @@ const DAY_TH: Record<string,string> = {
 @Component({
   selector: 'app-professor-courses',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent],
   template: `
-<div class="page-container">
+    <div class="app-layout">
+      <app-sidebar />
+      <div class="main-content">
+        <app-topbar title="รายวิชาของฉัน" subtitle="จัดการรายวิชาและตารางสอน" />
+        <div class="page-content">
   <div class="page-header">
     <div>
       <h1 class="page-title">รายวิชาของฉัน</h1>
@@ -156,6 +162,8 @@ const DAY_TH: Record<string,string> = {
     </div>
   </div>
 }
+      </div>
+    </div>
   `,
   styles: [`
     .loading-center { display:flex; justify-content:center; padding:80px; }
