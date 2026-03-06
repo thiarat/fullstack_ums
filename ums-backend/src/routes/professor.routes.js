@@ -158,7 +158,8 @@ router.post('/schedule', profCtrl.createSchedule);
  *         required: true
  *         schema: { type: integer }
  */
-router.delete('/schedule/:scheduleId', profCtrl.deleteSchedule);
+router.put("/schedule/:scheduleId", profCtrl.updateSchedule);
+router.delete("/schedule/:scheduleId", profCtrl.deleteSchedule);
 
 // ─── EXAM SCHEDULE ─────────────────────────────────────────────
 /**

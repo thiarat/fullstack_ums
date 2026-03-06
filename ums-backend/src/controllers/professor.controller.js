@@ -61,7 +61,7 @@ exports.getSchedule = async (req, res, next) => {
 
 exports.createSchedule = async (req, res, next) => {
   try {
-    const data = await professorService.createSchedule(req.user.prof_id, req.body);
+    const data = await professorService.addCourseSchedule(req.user.prof_id, req.body);
     await logAction(req.user.user_id, `CREATE_SCHEDULE course=${req.body.course_id}`, 'class_schedules', data.schedule_id);
     res.status(201).json({ success: true, message: 'Schedule created.', data });
   } catch (e) { handleError(e, next); }
@@ -69,7 +69,7 @@ exports.createSchedule = async (req, res, next) => {
 
 exports.deleteSchedule = async (req, res, next) => {
   try {
-    await professorService.deleteSchedule(req.user.prof_id, req.params.scheduleId);
+    await professorService.deleteCourseSchedule(req.user.prof_id, req.params.scheduleId);
     await logAction(req.user.user_id, `DELETE_SCHEDULE id=${req.params.scheduleId}`, 'class_schedules', +req.params.scheduleId);
     res.json({ success: true, message: 'Schedule deleted.' });
   } catch (e) { handleError(e, next); }
@@ -88,5 +88,13 @@ exports.createExamSchedule = async (req, res, next) => {
     const data = await professorService.createExamSchedule(req.user.prof_id, req.body);
     await logAction(req.user.user_id, `CREATE_EXAM course=${req.body.course_id} type=${req.body.exam_type}`, 'exam_schedules', data.exam_id);
     res.status(201).json({ success: true, message: 'Exam schedule created.', data });
+  } catch (e) { handleError(e, next); }
+};
+
+exports.updateSchedule = async (req, res, next) => {
+  try {
+    const data = await professorService.updateCourseSchedule(req.user.prof_id, +req.params.scheduleId, req.body);
+    await logAction(req.user.user_id, `UPDATE_SCHEDULE id=${req.params.scheduleId}`, 'class_schedules', +req.params.scheduleId);
+    res.json({ success: true, message: 'Schedule updated.', data });
   } catch (e) { handleError(e, next); }
 };

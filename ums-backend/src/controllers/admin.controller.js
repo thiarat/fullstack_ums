@@ -1,123 +1,115 @@
 const adminService = require('../services/admin.service');
 const { logAction } = require('../services/systemLog.service');
 
-const handleError = (error, next) => {
-  if (error.statusCode) return next(error);
-  next(error);
+const wrap = (fn) => async (req, res, next) => {
+  try {
+    const data = await fn(req, res);
+    if (data !== undefined) res.json({ success: true, data });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    next(err);
+  }
 };
 
 // Dashboard
-exports.getDashboard = async (req, res, next) => {
-  try {
-    const data = await adminService.getDashboardStats();
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+exports.getDashboard = wrap(async (req) => adminService.getDashboardStats());
 
 // Students
-exports.getStudents = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 20, search = '' } = req.query;
-    const data = await adminService.getAllStudents({ page: +page, limit: +limit, search });
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+exports.getStudents   = wrap(async (req) => adminService.getAllStudents(req.query));
+exports.getStudentById = wrap(async (req) => adminService.getStudentById(+req.params.id));
 
-exports.getStudentById = async (req, res, next) => {
-  try {
-    const data = await adminService.getStudentById(req.params.id);
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+// NEW: student schedule popup
+exports.getStudentSchedule = wrap(async (req) => adminService.getStudentSchedule(+req.params.id));
 
-exports.updateStudentStatus = async (req, res, next) => {
-  try {
-    const { is_active } = req.body;
-    const data = await adminService.updateStudentStatus(req.params.id, is_active);
-    await logAction(req.user.user_id, `UPDATE student status to ${is_active}`, 'students', +req.params.id);
-    res.json({ success: true, message: 'Student status updated.', data });
-  } catch (e) { handleError(e, next); }
-};
+exports.updateStudentStatus = wrap(async (req) => {
+  const r = await adminService.updateStudentStatus(+req.params.id, req.body.is_active);
+  await logAction(req.user.user_id, `UPDATE student status → ${req.body.is_active}`, 'users', +req.params.id);
+  return r;
+});
+
+// NEW: create user
+exports.createUser = wrap(async (req) => {
+  const r = await adminService.createUser(req.body);
+  await logAction(req.user.user_id, `CREATE user: ${req.body.username} (${req.body.role_name})`, 'users', r.user_id);
+  return r;
+});
+
+// NEW: update user
+exports.updateUser = wrap(async (req) => {
+  const r = await adminService.updateUser(+req.params.id, req.body);
+  await logAction(req.user.user_id, `UPDATE user info`, 'users', +req.params.id);
+  return r;
+});
+
+// NEW: delete user
+exports.deleteUser = wrap(async (req) => {
+  const r = await adminService.deleteUser(+req.params.id);
+  await logAction(req.user.user_id, `DELETE user`, 'users', +req.params.id);
+  return r;
+});
+
+// NEW: reset password directly
+exports.adminResetPassword = wrap(async (req) => {
+  const r = await adminService.adminResetPassword(+req.params.id, req.body.new_password);
+  await logAction(req.user.user_id, `RESET password for user`, 'users', +req.params.id);
+  return r;
+});
+
+// NEW: password reset requests list
+exports.getPasswordResetRequests = wrap(async () => adminService.getPasswordResetRequests());
+
+// NEW: approve reset request
+exports.approvePasswordReset = wrap(async (req) => {
+  const r = await adminService.approvePasswordReset(+req.params.requestId, req.body.new_password, req.user.user_id);
+  await logAction(req.user.user_id, `APPROVE password reset request`, 'password_reset_requests', +req.params.requestId);
+  return r;
+});
+
+// NEW: reject reset request
+exports.rejectPasswordReset = wrap(async (req) => {
+  const r = await adminService.rejectPasswordReset(+req.params.requestId, req.user.user_id);
+  await logAction(req.user.user_id, `REJECT password reset request`, 'password_reset_requests', +req.params.requestId);
+  return r;
+});
 
 // Professors
-exports.getProfessors = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 20, search = '', dept_id } = req.query;
-    const data = await adminService.getAllProfessors({ page: +page, limit: +limit, search, dept_id });
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+exports.getProfessors = wrap(async (req) => adminService.getAllProfessors(req.query));
 
 // Departments
-exports.getDepartments = async (req, res, next) => {
-  try {
-    const data = await adminService.getAllDepartments();
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
-
-exports.createDepartment = async (req, res, next) => {
-  try {
-    const data = await adminService.createDepartment(req.body);
-    await logAction(req.user.user_id, 'CREATE department', 'departments', data.dept_id);
-    res.status(201).json({ success: true, message: 'Department created.', data });
-  } catch (e) { handleError(e, next); }
-};
-
-exports.updateDepartment = async (req, res, next) => {
-  try {
-    const data = await adminService.updateDepartment(req.params.id, req.body);
-    await logAction(req.user.user_id, 'UPDATE department', 'departments', +req.params.id);
-    res.json({ success: true, message: 'Department updated.', data });
-  } catch (e) { handleError(e, next); }
-};
-
-exports.deleteDepartment = async (req, res, next) => {
-  try {
-    await adminService.deleteDepartment(req.params.id);
-    await logAction(req.user.user_id, 'DELETE department', 'departments', +req.params.id);
-    res.json({ success: true, message: 'Department deleted.' });
-  } catch (e) { handleError(e, next); }
-};
+exports.getDepartments    = wrap(async (req) => adminService.getAllDepartments());
+exports.createDepartment  = wrap(async (req) => {
+  const r = await adminService.createDepartment(req.body);
+  await logAction(req.user.user_id, `CREATE department: ${req.body.name}`, 'departments', r.dept_id);
+  return r;
+});
+exports.updateDepartment  = wrap(async (req) => {
+  const r = await adminService.updateDepartment(+req.params.id, req.body);
+  await logAction(req.user.user_id, `UPDATE department`, 'departments', +req.params.id);
+  return r;
+});
+exports.deleteDepartment  = wrap(async (req) => {
+  const r = await adminService.deleteDepartment(+req.params.id);
+  await logAction(req.user.user_id, `DELETE department`, 'departments', +req.params.id);
+  return r;
+});
 
 // Courses
-exports.getCourses = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 20, search = '', dept_id } = req.query;
-    const data = await adminService.getAllCourses({ page: +page, limit: +limit, search, dept_id });
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+exports.getCourses    = wrap(async (req) => adminService.getAllCourses(req.query));
+exports.createCourse  = wrap(async (req) => {
+  const r = await adminService.createCourse(req.body);
+  await logAction(req.user.user_id, `CREATE course: ${req.body.course_code}`, 'courses', r.course_id);
+  return r;
+});
+exports.updateCourse  = wrap(async (req) => {
+  const r = await adminService.updateCourse(+req.params.id, req.body);
+  await logAction(req.user.user_id, `UPDATE course`, 'courses', +req.params.id);
+  return r;
+});
+exports.deleteCourse  = wrap(async (req) => {
+  const r = await adminService.deleteCourse(+req.params.id);
+  await logAction(req.user.user_id, `DELETE course`, 'courses', +req.params.id);
+  return r;
+});
 
-exports.createCourse = async (req, res, next) => {
-  try {
-    const data = await adminService.createCourse(req.body);
-    await logAction(req.user.user_id, 'CREATE course', 'courses', data.course_id);
-    res.status(201).json({ success: true, message: 'Course created.', data });
-  } catch (e) { handleError(e, next); }
-};
-
-exports.updateCourse = async (req, res, next) => {
-  try {
-    const data = await adminService.updateCourse(req.params.id, req.body);
-    await logAction(req.user.user_id, 'UPDATE course', 'courses', +req.params.id);
-    res.json({ success: true, message: 'Course updated.', data });
-  } catch (e) { handleError(e, next); }
-};
-
-exports.deleteCourse = async (req, res, next) => {
-  try {
-    await adminService.deleteCourse(req.params.id);
-    await logAction(req.user.user_id, 'DELETE course', 'courses', +req.params.id);
-    res.json({ success: true, message: 'Course deleted.' });
-  } catch (e) { handleError(e, next); }
-};
-
-// System Logs
-exports.getSystemLogs = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 50 } = req.query;
-    const data = await adminService.getSystemLogs({ page: +page, limit: +limit });
-    res.json({ success: true, data });
-  } catch (e) { handleError(e, next); }
-};
+// Logs
+exports.getSystemLogs = wrap(async (req) => adminService.getSystemLogs(req.query));

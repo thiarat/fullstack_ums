@@ -2,8 +2,7 @@ const db = require('../config/database');
 
 // ─── DASHBOARD ─────────────────────────────────────────────────
 const getStudentDashboard = async (studentId) => {
-  const [profile, enrollments, upcomingExams, borrowedBooks] = await Promise.all([
-    // Profile
+  const [profile, enrollments, upcomingExams, borrowedBooks, gpaResult] = await Promise.all([
     db.query(
       `SELECT s.student_id, s.first_name, s.last_name, s.profile_image, s.enrollment_date,
               u.username, u.email, u.last_login
@@ -11,27 +10,33 @@ const getStudentDashboard = async (studentId) => {
        WHERE s.student_id = $1`,
       [studentId]
     ),
-    // Active enrollments count
+    db.query('SELECT COUNT(*) FROM enrollments WHERE student_id = $1 AND (grade IS NULL OR grade NOT IN (\'W\',\'F\'))', [studentId]),
+    // ตารางสอบ: เรียงจากใกล้สุด ไม่จำกัด 30 วัน
     db.query(
-      `SELECT COUNT(*) FROM enrollments WHERE student_id = $1`,
-      [studentId]
-    ),
-    // Upcoming exams (next 30 days)
-    db.query(
-      `SELECT e.exam_type, e.exam_date, e.start_time, e.end_time, e.room_number,
-              c.course_code, c.title as course_title
+      `SELECT e.exam_id, e.exam_type, e.exam_date, e.start_time, e.end_time, e.room_number,
+              c.course_code, c.title as course_title,
+              (e.exam_date - CURRENT_DATE) as days_until
        FROM exam_schedules e
        JOIN courses c ON e.course_id = c.course_id
        JOIN enrollments en ON c.course_id = en.course_id
-       WHERE en.student_id = $1
-         AND e.exam_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'
+       WHERE en.student_id = $1 AND e.exam_date >= CURRENT_DATE
        ORDER BY e.exam_date, e.start_time`,
       [studentId]
     ),
-    // Borrowed books
+    db.query(`SELECT COUNT(*) FROM library_records WHERE student_id = $1 AND status = 'Borrowed'`, [studentId]),
+    // GPA คำนวณ
     db.query(
-      `SELECT COUNT(*) FROM library_records
-       WHERE student_id = $1 AND status = 'Borrowed'`,
+      `SELECT
+         COUNT(*) FILTER (WHERE grade IS NOT NULL AND grade NOT IN ('W','I')) as graded_count,
+         ROUND(
+           AVG(CASE grade
+             WHEN 'A'  THEN 4.0 WHEN 'B+' THEN 3.5 WHEN 'B'  THEN 3.0
+             WHEN 'C+' THEN 2.5 WHEN 'C'  THEN 2.0 WHEN 'D+' THEN 1.5
+             WHEN 'D'  THEN 1.0 WHEN 'F'  THEN 0.0
+           END) FILTER (WHERE grade IS NOT NULL AND grade NOT IN ('W','I')),
+         2) as gpa
+       FROM enrollments
+       WHERE student_id = $1`,
       [studentId]
     ),
   ]);
@@ -43,6 +48,7 @@ const getStudentDashboard = async (studentId) => {
     stats: {
       enrolledCourses: parseInt(enrollments.rows[0].count),
       borrowedBooks: parseInt(borrowedBooks.rows[0].count),
+      gpa: gpaResult.rows[0].gpa ? parseFloat(gpaResult.rows[0].gpa) : null,
     },
     upcomingExams: upcomingExams.rows,
   };
@@ -54,7 +60,8 @@ const getMyEnrollments = async (studentId, { semester = null }) => {
     SELECT e.enrollment_id, e.grade, e.semester,
            c.course_id, c.course_code, c.title, c.credits,
            d.name as department,
-           p.first_name || ' ' || p.last_name as professor_name
+           p.first_name || ' ' || p.last_name as professor_name,
+           cs.day_of_week, cs.start_time, cs.end_time, cs.room_number
     FROM enrollments e
     JOIN courses c ON e.course_id = c.course_id
     LEFT JOIN departments d ON c.dept_id = d.dept_id
@@ -71,7 +78,6 @@ const getMyEnrollments = async (studentId, { semester = null }) => {
 };
 
 const getAvailableCourses = async (studentId) => {
-  // Courses not yet enrolled in current semester
   const result = await db.query(
     `SELECT c.course_id, c.course_code, c.title, c.credits,
             d.name as department,
@@ -100,13 +106,44 @@ const enrollCourse = async (studentId, courseId, semester) => {
     'SELECT enrollment_id FROM enrollments WHERE student_id = $1 AND course_id = $2 AND semester = $3',
     [studentId, courseId, semester]
   );
-  if (existing.rows.length > 0) {
-    throw { statusCode: 409, message: 'Already enrolled in this course for this semester.' };
-  }
+  if (existing.rows.length > 0) throw { statusCode: 409, message: 'ลงทะเบียนวิชานี้ในเทอมนี้แล้ว' };
 
-  // Check course exists
-  const course = await db.query('SELECT course_id FROM courses WHERE course_id = $1', [courseId]);
-  if (course.rows.length === 0) throw { statusCode: 404, message: 'Course not found.' };
+  // Check course exists + get schedule
+  const courseInfo = await db.query(
+    `SELECT c.course_id, cs.day_of_week, cs.start_time, cs.end_time
+     FROM courses c
+     LEFT JOIN class_schedules cs ON c.course_id = cs.course_id
+     WHERE c.course_id = $1`,
+    [courseId]
+  );
+  if (courseInfo.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบรายวิชา' };
+
+  const newCourse = courseInfo.rows[0];
+
+  // Time conflict check — เฉพาะวิชาที่มีตารางเรียน
+  if (newCourse.day_of_week && newCourse.start_time && newCourse.end_time) {
+    const conflicts = await db.query(
+      `SELECT c.course_code, c.title, cs.day_of_week, cs.start_time, cs.end_time
+       FROM enrollments e
+       JOIN courses c ON e.course_id = c.course_id
+       JOIN class_schedules cs ON c.course_id = cs.course_id
+       WHERE e.student_id = $1
+         AND e.grade IS DISTINCT FROM 'W'
+         AND cs.day_of_week = $2
+         AND cs.start_time < $4
+         AND cs.end_time   > $3`,
+      [studentId, newCourse.day_of_week, newCourse.start_time, newCourse.end_time]
+    );
+
+    if (conflicts.rows.length > 0) {
+      const c = conflicts.rows[0];
+      throw {
+        statusCode: 409,
+        message: `เวลาเรียนทับกับ ${c.course_code} ${c.title} (${c.day_of_week} ${c.start_time}–${c.end_time})`,
+        conflict: conflicts.rows,
+      };
+    }
+  }
 
   const result = await db.query(
     'INSERT INTO enrollments (student_id, course_id, semester) VALUES ($1, $2, $3) RETURNING *',
@@ -117,9 +154,7 @@ const enrollCourse = async (studentId, courseId, semester) => {
 
 const withdrawCourse = async (studentId, enrollmentId) => {
   const result = await db.query(
-    `UPDATE enrollments SET grade = 'W'
-     WHERE enrollment_id = $1 AND student_id = $2
-     RETURNING *`,
+    `UPDATE enrollments SET grade = 'W' WHERE enrollment_id = $1 AND student_id = $2 RETURNING *`,
     [enrollmentId, studentId]
   );
   if (result.rows.length === 0) throw { statusCode: 404, message: 'Enrollment not found.' };
@@ -136,12 +171,13 @@ const getMySchedule = async (studentId) => {
      JOIN courses c ON cs.course_id = c.course_id
      LEFT JOIN professors p ON cs.prof_id = p.prof_id
      JOIN enrollments e ON c.course_id = e.course_id
-     WHERE e.student_id = $1
-     ORDER BY CASE cs.day_of_week
-       WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
-       WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5
-       WHEN 'Saturday' THEN 6 WHEN 'Sunday' THEN 7 END,
-       cs.start_time`,
+     WHERE e.student_id = $1 AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
+         WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5
+         WHEN 'Saturday' THEN 6 WHEN 'Sunday' THEN 7
+       END, cs.start_time`,
     [studentId]
   );
   return result.rows;
@@ -151,7 +187,8 @@ const getMySchedule = async (studentId) => {
 const getMyExamSchedule = async (studentId) => {
   const result = await db.query(
     `SELECT es.exam_id, es.exam_type, es.exam_date, es.start_time, es.end_time, es.room_number,
-            c.course_code, c.title as course_title
+            c.course_code, c.title as course_title,
+            (es.exam_date - CURRENT_DATE) as days_until
      FROM exam_schedules es
      JOIN courses c ON es.course_id = c.course_id
      JOIN enrollments e ON c.course_id = e.course_id
@@ -164,36 +201,58 @@ const getMyExamSchedule = async (studentId) => {
 
 // ─── GRADES ────────────────────────────────────────────────────
 const getMyGrades = async (studentId) => {
-  const result = await db.query(
-    `SELECT e.enrollment_id, e.grade, e.semester,
-            c.course_code, c.title, c.credits
-     FROM enrollments e
-     JOIN courses c ON e.course_id = c.course_id
-     WHERE e.student_id = $1
-     ORDER BY e.semester DESC, c.course_code`,
-    [studentId]
-  );
-
-  // Calculate GPA
-  const gradePoints = { 'A': 4.0, 'B+': 3.5, 'B': 3.0, 'C+': 2.5, 'C': 2.0, 'D+': 1.5, 'D': 1.0, 'F': 0.0 };
-  let totalCredits = 0, totalPoints = 0;
-  result.rows.forEach(row => {
-    if (row.grade && gradePoints[row.grade] !== undefined) {
-      totalCredits += row.credits;
-      totalPoints += gradePoints[row.grade] * row.credits;
-    }
-  });
-
-  const gpa = totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : null;
-  return { grades: result.rows, gpa, totalCredits };
+  const [grades, gpa] = await Promise.all([
+    db.query(
+      `SELECT e.enrollment_id, e.grade, e.semester,
+              c.course_code, c.title, c.credits,
+              d.name as department
+       FROM enrollments e
+       JOIN courses c ON e.course_id = c.course_id
+       LEFT JOIN departments d ON c.dept_id = d.dept_id
+       WHERE e.student_id = $1
+       ORDER BY e.semester DESC, c.course_code`,
+      [studentId]
+    ),
+    db.query(
+      `SELECT
+         ROUND(
+           AVG(CASE grade
+             WHEN 'A'  THEN 4.0 WHEN 'B+' THEN 3.5 WHEN 'B'  THEN 3.0
+             WHEN 'C+' THEN 2.5 WHEN 'C'  THEN 2.0 WHEN 'D+' THEN 1.5
+             WHEN 'D'  THEN 1.0 WHEN 'F'  THEN 0.0
+           END) FILTER (WHERE grade IS NOT NULL AND grade NOT IN ('W','I')),
+         2) as gpa,
+         SUM(c.credits) FILTER (WHERE e.grade IS NOT NULL AND e.grade NOT IN ('W','I')) as total_credits
+       FROM enrollments e
+       JOIN courses c ON e.course_id = c.course_id
+       WHERE e.student_id = $1`,
+      [studentId]
+    ),
+  ]);
+  return {
+    grades: grades.rows,
+    gpa: gpa.rows[0]?.gpa ? parseFloat(gpa.rows[0].gpa) : null,
+    totalCredits: parseInt(gpa.rows[0]?.total_credits) || 0,
+  };
 };
 
 // ─── LIBRARY ───────────────────────────────────────────────────
+const searchBooks = async ({ search = '', available = false }) => {
+  let query = `
+    SELECT book_id, isbn, title, author, total_copies, available_copies
+    FROM books
+    WHERE (title ILIKE $1 OR author ILIKE $1 OR isbn ILIKE $1)
+  `;
+  if (available) query += ' AND available_copies > 0';
+  query += ' ORDER BY title';
+  const result = await db.query(query, [`%${search}%`]);
+  return result.rows;
+};
+
 const getMyBorrowedBooks = async (studentId) => {
   const result = await db.query(
-    `SELECT lr.record_id, lr.borrow_date, lr.due_date, lr.return_date,
-            lr.fine_amount, lr.status,
-            b.isbn, b.title, b.author,
+    `SELECT lr.record_id, lr.borrow_date, lr.due_date, lr.return_date, lr.fine_amount, lr.status,
+            b.title, b.author, b.isbn,
             CASE
               WHEN lr.return_date IS NULL AND CURRENT_DATE > lr.due_date
               THEN (CURRENT_DATE - lr.due_date) * (SELECT fine_per_day FROM library_settings LIMIT 1)
@@ -208,24 +267,10 @@ const getMyBorrowedBooks = async (studentId) => {
   return result.rows;
 };
 
-const searchBooks = async ({ search = '', page = 1, limit = 20 }) => {
-  const offset = (page - 1) * limit;
-  const result = await db.query(
-    `SELECT book_id, isbn, title, author, total_copies, available_copies,
-            CASE WHEN available_copies > 0 THEN true ELSE false END as is_available
-     FROM books
-     WHERE title ILIKE $1 OR author ILIKE $1 OR isbn ILIKE $1
-     ORDER BY title LIMIT $2 OFFSET $3`,
-    [`%${search}%`, limit, offset]
-  );
-  return result.rows;
-};
-
 module.exports = {
   getStudentDashboard,
   getMyEnrollments, getAvailableCourses, enrollCourse, withdrawCourse,
-  getMySchedule,
-  getMyExamSchedule,
+  getMySchedule, getMyExamSchedule,
   getMyGrades,
-  getMyBorrowedBooks, searchBooks,
+  searchBooks, getMyBorrowedBooks,
 };

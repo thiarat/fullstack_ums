@@ -81,15 +81,5 @@ app.listen(PORT, () => {
   logger.info(`   API Docs    : http://localhost:${PORT}/api-docs`);
   logger.info(`   Health      : http://localhost:${PORT}/health`);
 });
-// ─── CORS Configuration ──────────────────────────────────────
-const corsOptions = {
-  origin: [
-    'http://localhost:4200',
-    process.env.FRONTEND_URL,      // ใส่ใน Vercel env
-    /\.vercel\.app$/               // รับ *.vercel.app ทุก domain
-  ],
-  credentials: true,
-};
 
-app.use(cors(corsOptions));
 module.exports = app;

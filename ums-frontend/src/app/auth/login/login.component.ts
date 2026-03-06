@@ -1,13 +1,15 @@
 import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule],
   template: `
     <div class="login-page">
       <div class="login-left">
@@ -91,7 +93,28 @@ import { AuthService } from '../../core/services/auth.service';
               <i class="bi bi-box-arrow-in-right me-2" *ngIf="!loading()"></i>
               {{ loading() ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
             </button>
+            <div class="text-center mt-3">
+              <button type="button" class="forgot-btn" (click)="openForgot()">
+                <i class="bi bi-key"></i> ลืมรหัสผ่าน?
+              </button>
+            </div>
           </form>
+
+          <!-- Forgot Password -->
+          @if (forgotModal()) {
+            <div class="forgot-overlay" (click)="forgotModal.set(false)">
+              <div class="forgot-box" (click)="$event.stopPropagation()">
+                <h5>ขอรีเซ็ตรหัสผ่าน</h5>
+                <p class="text-muted small">ใส่ username หรือรหัสนักศึกษา จากนั้น Admin จะดำเนินการให้</p>
+                <input [(ngModel)]="forgotUsername" class="form-control mb-3" placeholder="username">
+                @if (forgotMsg()) { <div class="alert alert-info py-2 small">{{ forgotMsg() }}</div> }
+                <div class="d-flex gap-2">
+                  <button class="btn btn-secondary flex-1" (click)="forgotModal.set(false)">ยกเลิก</button>
+                  <button class="btn btn-primary flex-1" (click)="submitForgot()">ส่งคำขอ</button>
+                </div>
+              </div>
+            </div>
+          }
         </div>
       </div>
     </div>
@@ -355,6 +378,9 @@ export class LoginComponent {
   loading = signal(false);
   errorMsg = signal('');
   showPwd = signal(false);
+  forgotModal = signal(false);
+  forgotUsername = '';
+  forgotMsg = signal('');
 
   features = [
     { icon: 'bi-people-fill',      label: 'จัดการนักศึกษาและอาจารย์' },
@@ -366,7 +392,7 @@ export class LoginComponent {
 
   get f() { return this.form.controls; }
 
-  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router) {}
+  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router, private http: HttpClient) {}
 
   onLogin() {
     this.submitted = true;
@@ -382,4 +408,15 @@ export class LoginComponent {
       }
     });
   }
+  openForgot() { this.forgotModal.set(true); this.forgotMsg.set(''); this.forgotUsername = ''; }
+
+  submitForgot() {
+    if (!this.forgotUsername) return;
+    this.http.post(environment.apiUrl + '/auth/forgot-password', { username: this.forgotUsername })
+      .subscribe({
+        next: (r: any) => this.forgotMsg.set(r.message || 'ส่งคำขอเรียบร้อย'),
+        error: () => this.forgotMsg.set('เกิดข้อผิดพลาด กรุณาลองใหม่'),
+      });
+  }
+
 }

@@ -227,10 +227,71 @@ const createExamSchedule = async (profId, { course_id, exam_type, exam_date, sta
   return result.rows[0];
 };
 
+// replaced below
+
+
+// ─── SCHEDULE MANAGEMENT (NEW) ─────────────────────────────────
+const addCourseSchedule = async (profId, { course_id, day_of_week, start_time, end_time, room_number }) => {
+  // ตรวจว่าเป็นวิชาที่ prof สอนอยู่แล้ว หรือ course อยู่ใน dept ของ prof
+  const courseCheck = await db.query('SELECT course_id FROM courses WHERE course_id = $1', [course_id]);
+  if (courseCheck.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบรายวิชา' };
+
+  // เช็คเวลาทับของ prof เอง
+  const conflict = await db.query(
+    `SELECT c.course_code, c.title, cs.start_time, cs.end_time
+     FROM class_schedules cs
+     JOIN courses c ON cs.course_id = c.course_id
+     WHERE cs.prof_id = $1 AND cs.day_of_week = $2
+       AND cs.start_time < $4 AND cs.end_time > $3`,
+    [profId, day_of_week, start_time, end_time]
+  );
+  if (conflict.rows.length > 0) {
+    const c = conflict.rows[0];
+    throw { statusCode: 409, message: `เวลาทับกับ ${c.course_code} ${c.title} (${c.start_time}–${c.end_time})` };
+  }
+
+  const result = await db.query(
+    `INSERT INTO class_schedules (course_id, prof_id, day_of_week, start_time, end_time, room_number)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [course_id, profId, day_of_week, start_time, end_time, room_number]
+  );
+  return result.rows[0];
+};
+
+const updateCourseSchedule = async (profId, scheduleId, { day_of_week, start_time, end_time, room_number }) => {
+  // ตรวจว่า schedule นี้เป็นของ prof คนนี้
+  const owns = await db.query(
+    'SELECT schedule_id FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2',
+    [scheduleId, profId]
+  );
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'ไม่มีสิทธิ์แก้ไขตารางสอนนี้' };
+
+  const result = await db.query(
+    `UPDATE class_schedules SET
+       day_of_week  = COALESCE($1, day_of_week),
+       start_time   = COALESCE($2, start_time),
+       end_time     = COALESCE($3, end_time),
+       room_number  = COALESCE($4, room_number)
+     WHERE schedule_id = $5 RETURNING *`,
+    [day_of_week, start_time, end_time, room_number, scheduleId]
+  );
+  return result.rows[0];
+};
+
+const deleteCourseSchedule = async (profId, scheduleId) => {
+  const result = await db.query(
+    'DELETE FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2 RETURNING *',
+    [scheduleId, profId]
+  );
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบตารางสอน หรือไม่มีสิทธิ์ลบ' };
+  return { deleted: true, schedule_id: scheduleId };
+};
+
 module.exports = {
   getProfessorDashboard,
   getMyCourses, getCourseStudents,
   submitGrade, submitBulkGrades,
-  getMySchedule, createSchedule, deleteSchedule,
-  getMyExamSchedule, createExamSchedule,
+  getMySchedule, getMyExamSchedule,
+  addCourseSchedule, updateCourseSchedule, deleteCourseSchedule,
+  createExamSchedule,
 };

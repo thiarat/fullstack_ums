@@ -1,8 +1,7 @@
 const db = require('../config/database');
+const bcrypt = require('bcryptjs');
 
-/**
- * Get dashboard summary statistics
- */
+// ─── DASHBOARD ─────────────────────────────────────────────────
 const getDashboardStats = async () => {
   const [students, professors, courses, departments, books, borrowedBooks, logs] = await Promise.all([
     db.query('SELECT COUNT(*) FROM students'),
@@ -18,7 +17,6 @@ const getDashboardStats = async () => {
               LEFT JOIN roles r ON u.role_id = r.role_id
               ORDER BY sl.created_at DESC LIMIT 10`),
   ]);
-
   return {
     counts: {
       students: parseInt(students.rows[0].count),
@@ -32,20 +30,18 @@ const getDashboardStats = async () => {
   };
 };
 
-// ─── STUDENTS ──────────────────────────────────────────────
+// ─── STUDENTS ──────────────────────────────────────────────────
 const getAllStudents = async ({ page = 1, limit = 20, search = '' }) => {
   const offset = (page - 1) * limit;
   const searchParam = `%${search}%`;
-
   const [data, count] = await Promise.all([
     db.query(
       `SELECT s.student_id, s.first_name, s.last_name, s.profile_image,
-              s.enrollment_date, u.username, u.email, u.is_active, u.last_login
+              s.enrollment_date, u.user_id, u.username, u.email, u.is_active, u.last_login
        FROM students s
        JOIN users u ON s.user_id = u.user_id
        WHERE s.first_name ILIKE $1 OR s.last_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1
-       ORDER BY s.student_id
-       LIMIT $2 OFFSET $3`,
+       ORDER BY s.student_id LIMIT $2 OFFSET $3`,
       [searchParam, limit, offset]
     ),
     db.query(
@@ -54,13 +50,12 @@ const getAllStudents = async ({ page = 1, limit = 20, search = '' }) => {
       [searchParam]
     ),
   ]);
-
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
 const getStudentById = async (studentId) => {
   const result = await db.query(
-    `SELECT s.*, u.username, u.email, u.is_active, u.last_login, u.created_at
+    `SELECT s.*, u.user_id, u.username, u.email, u.is_active, u.last_login, u.created_at
      FROM students s JOIN users u ON s.user_id = u.user_id
      WHERE s.student_id = $1`,
     [studentId]
@@ -69,28 +64,208 @@ const getStudentById = async (studentId) => {
   return result.rows[0];
 };
 
+// NEW: get student schedule for admin popup
+const getStudentSchedule = async (studentId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            c.course_code, c.title as course_title, c.credits,
+            p.first_name || ' ' || p.last_name as professor_name
+     FROM enrollments e
+     JOIN courses c ON e.course_id = c.course_id
+     JOIN class_schedules cs ON c.course_id = cs.course_id
+     LEFT JOIN professors p ON cs.prof_id = p.prof_id
+     WHERE e.student_id = $1 AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2
+         WHEN 'Wednesday' THEN 3 WHEN 'Thursday'  THEN 4
+         WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+         WHEN 'Sunday'    THEN 7
+       END, cs.start_time`,
+    [studentId]
+  );
+  return result.rows;
+};
+
 const updateStudentStatus = async (studentId, isActive) => {
   const student = await db.query('SELECT user_id FROM students WHERE student_id = $1', [studentId]);
   if (student.rows.length === 0) throw { statusCode: 404, message: 'Student not found.' };
-
   await db.query('UPDATE users SET is_active = $1 WHERE user_id = $2', [isActive, student.rows[0].user_id]);
   return { student_id: studentId, is_active: isActive };
 };
 
-// ─── PROFESSORS ────────────────────────────────────────────
+// NEW: create user (student or professor)
+const createUser = async ({ username, password, email, role_name, first_name, last_name, dept_id }) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // check duplicate
+    const existing = await client.query(
+      'SELECT user_id FROM users WHERE username = $1 OR email = $2', [username, email]
+    );
+    if (existing.rows.length > 0) throw { statusCode: 409, message: 'Username หรือ Email ซ้ำในระบบ' };
+
+    const role = await client.query('SELECT role_id FROM roles WHERE role_name = $1', [role_name]);
+    if (role.rows.length === 0) throw { statusCode: 400, message: 'Role ไม่ถูกต้อง' };
+
+    const hash = await bcrypt.hash(password, 10);
+    const userResult = await client.query(
+      'INSERT INTO users (username, password_secure, email, role_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      [username, hash, email, role.rows[0].role_id]
+    );
+    const user = userResult.rows[0];
+
+    if (role_name === 'Student') {
+      await client.query(
+        'INSERT INTO students (user_id, first_name, last_name) VALUES ($1, $2, $3)',
+        [user.user_id, first_name, last_name]
+      );
+    } else if (role_name === 'Professor') {
+      await client.query(
+        'INSERT INTO professors (user_id, first_name, last_name, dept_id) VALUES ($1, $2, $3, $4)',
+        [user.user_id, first_name, last_name, dept_id || null]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { user_id: user.user_id, username, email, role_name, first_name, last_name };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// NEW: update user info
+const updateUser = async (userId, { first_name, last_name, email, dept_id }) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // get role
+    const roleRes = await client.query(
+      `SELECT r.role_name, s.student_id, p.prof_id
+       FROM users u
+       JOIN roles r ON u.role_id = r.role_id
+       LEFT JOIN students s ON u.user_id = s.user_id
+       LEFT JOIN professors p ON u.user_id = p.user_id
+       WHERE u.user_id = $1`, [userId]
+    );
+    if (roleRes.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
+    const { role_name, student_id, prof_id } = roleRes.rows[0];
+
+    if (email) await client.query('UPDATE users SET email = $1 WHERE user_id = $2', [email, userId]);
+
+    if (role_name === 'Student' && student_id) {
+      await client.query(
+        'UPDATE students SET first_name = COALESCE($1,first_name), last_name = COALESCE($2,last_name) WHERE student_id = $3',
+        [first_name, last_name, student_id]
+      );
+    } else if (role_name === 'Professor' && prof_id) {
+      await client.query(
+        `UPDATE professors SET
+           first_name = COALESCE($1,first_name),
+           last_name  = COALESCE($2,last_name),
+           dept_id    = COALESCE($3,dept_id)
+         WHERE prof_id = $4`,
+        [first_name, last_name, dept_id, prof_id]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { user_id: userId, updated: true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// NEW: delete user
+const deleteUser = async (userId) => {
+  const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
+  if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
+  await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+  return { deleted: true };
+};
+
+// NEW: admin reset password for a user
+const adminResetPassword = async (userId, newPassword) => {
+  const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
+  if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
+  const hash = await bcrypt.hash(newPassword, 10);
+  await db.query('UPDATE users SET password_secure = $1 WHERE user_id = $2', [hash, userId]);
+  return { user_id: userId, reset: true };
+};
+
+// NEW: password reset requests
+const getPasswordResetRequests = async () => {
+  const result = await db.query(
+    `SELECT pr.request_id, pr.user_id, pr.status, pr.created_at,
+            u.username, u.email, r.role_name,
+            COALESCE(s.first_name, p.first_name) as first_name,
+            COALESCE(s.last_name,  p.last_name)  as last_name
+     FROM password_reset_requests pr
+     JOIN users u   ON pr.user_id = u.user_id
+     JOIN roles r   ON u.role_id  = r.role_id
+     LEFT JOIN students s   ON u.user_id = s.user_id
+     LEFT JOIN professors p ON u.user_id = p.user_id
+     WHERE pr.status = 'pending'
+     ORDER BY pr.created_at DESC`
+  );
+  return result.rows;
+};
+
+const approvePasswordReset = async (requestId, newPassword, adminUserId) => {
+  const req = await db.query(
+    `SELECT * FROM password_reset_requests WHERE request_id = $1 AND status = 'pending'`,
+    [requestId]
+  );
+  if (req.rows.length === 0) throw { statusCode: 404, message: 'Request not found or already processed.' };
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE users SET password_secure = $1 WHERE user_id = $2', [hash, req.rows[0].user_id]);
+    await client.query(
+      `UPDATE password_reset_requests SET status = 'approved', resolved_at = NOW(), resolved_by = $1 WHERE request_id = $2`,
+      [adminUserId, requestId]
+    );
+    await client.query('COMMIT');
+    return { approved: true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const rejectPasswordReset = async (requestId, adminUserId) => {
+  const result = await db.query(
+    `UPDATE password_reset_requests SET status = 'rejected', resolved_at = NOW(), resolved_by = $1
+     WHERE request_id = $2 AND status = 'pending' RETURNING *`,
+    [adminUserId, requestId]
+  );
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'Request not found.' };
+  return { rejected: true };
+};
+
+// ─── PROFESSORS ────────────────────────────────────────────────
 const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = null }) => {
   const offset = (page - 1) * limit;
   const params = [`%${search}%`, limit, offset];
   let deptFilter = '';
-  if (dept_id) {
-    params.push(dept_id);
-    deptFilter = `AND p.dept_id = $${params.length}`;
-  }
+  if (dept_id) { params.push(dept_id); deptFilter = `AND p.dept_id = $${params.length}`; }
 
   const [data, count] = await Promise.all([
     db.query(
       `SELECT p.prof_id, p.first_name, p.last_name, p.profile_image,
-              d.name as department, u.username, u.email, u.is_active, u.last_login
+              d.name as department, u.user_id, u.username, u.email, u.is_active, u.last_login
        FROM professors p
        JOIN users u ON p.user_id = u.user_id
        LEFT JOIN departments d ON p.dept_id = d.dept_id
@@ -100,15 +275,14 @@ const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = n
     ),
     db.query(
       `SELECT COUNT(*) FROM professors p JOIN users u ON p.user_id = u.user_id
-       WHERE (p.first_name ILIKE $1) ${deptFilter}`,
+       WHERE (p.first_name ILIKE $1 OR p.last_name ILIKE $1) ${deptFilter}`,
       dept_id ? [`%${search}%`, dept_id] : [`%${search}%`]
     ),
   ]);
-
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
-// ─── DEPARTMENTS ───────────────────────────────────────────
+// ─── DEPARTMENTS ───────────────────────────────────────────────
 const getAllDepartments = async () => {
   const result = await db.query(
     `SELECT d.*, COUNT(DISTINCT p.prof_id) as professor_count, COUNT(DISTINCT c.course_id) as course_count
@@ -143,7 +317,7 @@ const deleteDepartment = async (deptId) => {
   return result.rows[0];
 };
 
-// ─── COURSES ───────────────────────────────────────────────
+// ─── COURSES ───────────────────────────────────────────────────
 const getAllCourses = async ({ page = 1, limit = 20, search = '', dept_id = null }) => {
   const offset = (page - 1) * limit;
   const params = [`%${search}%`, limit, offset];
@@ -177,10 +351,8 @@ const updateCourse = async (courseId, body) => {
   const { course_code, title, credits, dept_id } = body;
   const result = await db.query(
     `UPDATE courses SET
-       course_code = COALESCE($1, course_code),
-       title = COALESCE($2, title),
-       credits = COALESCE($3, credits),
-       dept_id = COALESCE($4, dept_id)
+       course_code = COALESCE($1, course_code), title = COALESCE($2, title),
+       credits = COALESCE($3, credits), dept_id = COALESCE($4, dept_id)
      WHERE course_id = $5 RETURNING *`,
     [course_code, title, credits, dept_id, courseId]
   );
@@ -194,7 +366,7 @@ const deleteCourse = async (courseId) => {
   return result.rows[0];
 };
 
-// ─── SYSTEM LOGS ───────────────────────────────────────────
+// ─── SYSTEM LOGS ───────────────────────────────────────────────
 const getSystemLogs = async ({ page = 1, limit = 50 }) => {
   const offset = (page - 1) * limit;
   const [data, count] = await Promise.all([
@@ -213,7 +385,9 @@ const getSystemLogs = async ({ page = 1, limit = 50 }) => {
 
 module.exports = {
   getDashboardStats,
-  getAllStudents, getStudentById, updateStudentStatus,
+  getAllStudents, getStudentById, getStudentSchedule, updateStudentStatus,
+  createUser, updateUser, deleteUser,
+  adminResetPassword, getPasswordResetRequests, approvePasswordReset, rejectPasswordReset,
   getAllProfessors,
   getAllDepartments, createDepartment, updateDepartment, deleteDepartment,
   getAllCourses, createCourse, updateCourse, deleteCourse,

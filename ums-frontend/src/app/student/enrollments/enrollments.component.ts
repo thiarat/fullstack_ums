@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -88,6 +88,7 @@ export class StudentEnrollmentsComponent implements OnInit {
   tab = signal<'my'|'available'>('my');
   enrollments = signal<any[]>([]);
   available = signal<any[]>([]);
+  conflictError = signal('');
   semester = '1/2567';
 
   constructor(private api: StudentApiService) {}
@@ -103,7 +104,15 @@ export class StudentEnrollmentsComponent implements OnInit {
 
   enroll(courseId: number) {
     if (!this.semester) return;
-    this.api.enrollCourse(courseId, this.semester).subscribe(() => { this.loadMy(); this.loadAvailable(); this.tab.set('my'); });
+    this.conflictError.set('');
+    this.api.enrollCourse(courseId, this.semester).subscribe({
+      next: () => { this.loadMy(); this.loadAvailable(); this.tab.set('my'); },
+      error: (e: any) => {
+        const msg = e?.error?.message || 'เกิดข้อผิดพลาด';
+        this.conflictError.set(msg);
+        setTimeout(() => this.conflictError.set(''), 6000);
+      }
+    });
   }
 
   withdraw(e: any) {

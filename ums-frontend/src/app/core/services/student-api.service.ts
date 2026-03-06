@@ -17,4 +17,5 @@ export class StudentApiService extends ApiService {
   getGrades()                  { return this.get<any>('/student/grades'); }
   getBorrowedBooks()           { return this.get<LibraryRecord[]>('/student/library/borrowed'); }
   searchBooks(search = '', page = 1) { return this.get<Book[]>('/student/library/books', { search, page }); }
+  forgotPassword(username: string) { return this.post('/auth/forgot-password', { username }); }
 }
