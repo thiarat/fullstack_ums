@@ -45,6 +45,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// ─── Explicit OPTIONS preflight ─────────────────────────────
+app.options('*', cors());
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
@@ -91,3 +94,4 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 module.exports = app;
+

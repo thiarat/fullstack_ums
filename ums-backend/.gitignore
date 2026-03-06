@@ -4,3 +4,4 @@ logs/
 *.zip
 
 .vercel
+.env*.local

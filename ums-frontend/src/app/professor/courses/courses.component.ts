@@ -189,7 +189,7 @@ const DAY_TH: Record<string,string> = {
     .data-table td { padding:12px 16px; border-top:1px solid #f1f5f9; }
   `]
 })
-export class CoursesComponent implements OnInit {
+export class ProfCoursesComponent implements OnInit {
   private api = inject(ProfessorApiService);
 
   courses       = signal<any[]>([]);
@@ -273,3 +273,4 @@ export class CoursesComponent implements OnInit {
     this.api.deleteSchedule(c.schedule_id).subscribe({ next: () => this.loadCourses() });
   }
 }
+

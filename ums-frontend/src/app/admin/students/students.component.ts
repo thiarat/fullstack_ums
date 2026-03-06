@@ -186,6 +186,7 @@ import { AdminApiService } from '../../core/services/admin-api.service';
               <select [(ngModel)]="form.role_name" class="form-control">
                 <option value="Student">Student</option>
                 <option value="Professor">Professor</option>
+                <option value="Admin">Admin</option>
               </select>
             </div>
           }
@@ -272,7 +273,7 @@ import { AdminApiService } from '../../core/services/admin-api.service';
     .loading-overlay { display:flex; justify-content:center; padding:60px; }
   `]
 })
-export class StudentsComponent implements OnInit {
+export class AdminStudentsComponent implements OnInit {
   private api = inject(AdminApiService);
 
   students    = signal<any[]>([]);
@@ -410,3 +411,4 @@ export class StudentsComponent implements OnInit {
     });
   }
 }
+

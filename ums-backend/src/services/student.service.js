@@ -229,7 +229,8 @@ const getMyGrades = async (studentId) => {
       [studentId]
     ),
   ]);
-  return { grades: grades.rows, gpa: gpa.rows[0] };
+  const gpaRow = gpa.rows[0];
+  return { grades: grades.rows, gpa: gpaRow.gpa ? parseFloat(gpaRow.gpa) : null, totalCredits: parseInt(gpaRow.total_credits) || 0 };
 };
 
 // ─── LIBRARY ───────────────────────────────────────────────────

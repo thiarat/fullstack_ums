@@ -1,3 +1,25 @@
+# fix_errors_v3.ps1 - รันใน ums-frontend folder
+$base = "src/app"
+
+Write-Host "Fixing class names..." -ForegroundColor Cyan
+
+# Fix 1-3: class names (เหมือนเดิม)
+(Get-Content "$base/admin/students/students.component.ts" -Raw) `
+  -replace 'export class StudentsComponent implements OnInit', 'export class AdminStudentsComponent implements OnInit' |
+  Set-Content "$base/admin/students/students.component.ts"
+
+(Get-Content "$base/professor/courses/courses.component.ts" -Raw) `
+  -replace 'export class CoursesComponent implements OnInit', 'export class ProfCoursesComponent implements OnInit' |
+  Set-Content "$base/professor/courses/courses.component.ts"
+
+(Get-Content "$base/student/dashboard/dashboard.component.ts" -Raw) `
+  -replace 'export class DashboardComponent implements OnInit', 'export class StudentDashboardComponent implements OnInit' |
+  Set-Content "$base/student/dashboard/dashboard.component.ts"
+
+Write-Host "Fixing admin-api.service.ts..." -ForegroundColor Cyan
+
+# Fix 4: admin-api.service.ts
+@'
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ApiService } from './api.service';
@@ -52,3 +74,7 @@ export class AdminApiService extends ApiService {
     return this.get<any>('/admin/logs', { page, limit });
   }
 }
+'@ | Set-Content "$base/core/services/admin-api.service.ts"
+
+Write-Host "All done!" -ForegroundColor Green
+Write-Host "Run: vercel --prod" -ForegroundColor Yellow

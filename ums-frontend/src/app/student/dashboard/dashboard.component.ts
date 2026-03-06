@@ -108,7 +108,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
     .days-badge.normal { background:#dbeafe; color:#2563eb; }
   `]
 })
-export class DashboardComponent implements OnInit {
+export class StudentDashboardComponent implements OnInit {
   private api = inject(StudentApiService);
   profile     = signal<any>(null);
   stats       = signal<any>(null);
@@ -141,3 +141,4 @@ export class DashboardComponent implements OnInit {
     });
   }
 }
+
