@@ -32,11 +32,11 @@ exports.getAvailableCourses = async (req, res, next) => {
 
 exports.enrollCourse = async (req, res, next) => {
   try {
-    const { course_id, semester } = req.body;
+    const { course_id, semester, schedule_id } = req.body;
     if (!course_id || !semester) {
       return res.status(400).json({ success: false, message: 'course_id and semester are required.' });
     }
-    const data = await studentService.enrollCourse(req.user.student_id, course_id, semester);
+    const data = await studentService.enrollCourse(req.user.student_id, course_id, semester, schedule_id);
     await logAction(req.user.user_id, `ENROLL course_id=${course_id} semester=${semester}`, 'enrollments', data.enrollment_id);
     res.status(201).json({ success: true, message: 'Enrolled successfully.', data });
   } catch (e) { handleError(e, next); }
@@ -84,8 +84,8 @@ exports.getBorrowedBooks = async (req, res, next) => {
 
 exports.searchBooks = async (req, res, next) => {
   try {
-    const { search = '', page = 1, limit = 20 } = req.query;
-    const data = await studentService.searchBooks({ search, page: +page, limit: +limit });
+    const { search = '', dept = '', page = 1, limit = 20 } = req.query;
+    const data = await studentService.searchBooks({ search, dept, page: +page, limit: +limit });
     res.json({ success: true, data });
   } catch (e) { handleError(e, next); }
 };

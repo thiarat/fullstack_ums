@@ -287,9 +287,25 @@ const deleteCourseSchedule = async (profId, scheduleId) => {
   return { deleted: true, schedule_id: scheduleId };
 };
 
+const getDeptCourses = async (profId) => {
+  // ดึงวิชาทั้งหมดในแผนกเดียวกับอาจารย์ (สำหรับเลือกเพิ่มตารางสอน)
+  const result = await db.query(
+    `SELECT c.course_id, c.course_code, c.title, c.credits,
+            d.name as department
+     FROM courses c
+     LEFT JOIN departments d ON c.dept_id = d.dept_id
+     WHERE c.dept_id = (
+       SELECT dept_id FROM professors WHERE prof_id = $1
+     )
+     ORDER BY c.course_code`,
+    [profId]
+  );
+  return result.rows;
+};
+
 module.exports = {
   getProfessorDashboard,
-  getMyCourses, getCourseStudents,
+  getMyCourses, getDeptCourses, getCourseStudents,
   submitGrade, submitBulkGrades,
   getMySchedule, getMyExamSchedule,
   addCourseSchedule, updateCourseSchedule, deleteCourseSchedule,

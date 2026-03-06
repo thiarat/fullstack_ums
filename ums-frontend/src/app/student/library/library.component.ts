@@ -21,9 +21,20 @@ import { StudentApiService } from '../../core/services/student-api.service';
           </ul>
 
           <div *ngIf="tab() === 'search'">
-            <div class="search-box mb-3" style="max-width:400px">
-              <i class="bi bi-search"></i>
-              <input class="form-control" [(ngModel)]="search" (ngModelChange)="loadBooks()" placeholder="ค้นหาชื่อหนังสือ, ผู้แต่ง, ISBN...">
+            <!-- Search + dept filter -->
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div class="search-box" style="max-width:320px;flex:1">
+                <i class="bi bi-search"></i>
+                <input class="form-control" [(ngModel)]="search" (ngModelChange)="loadBooks()" placeholder="ค้นหาชื่อหนังสือ, ผู้แต่ง, ISBN...">
+              </div>
+              <select class="form-select" style="max-width:200px" [(ngModel)]="deptFilter" (ngModelChange)="loadBooks()">
+                <option value="">ทุกแผนก</option>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Mathematics">Mathematics</option>
+                <option value="Business Administration">Business Administration</option>
+                <option value="Engineering">Engineering</option>
+              </select>
             </div>
             <div class="row g-3">
               <div class="col-md-6 col-lg-4 stagger-item" *ngFor="let b of books()">
@@ -32,7 +43,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
                     <div class="book-icon"><i class="bi bi-book-fill"></i></div>
                     <h6 class="mt-2 mb-1">{{ b.title }}</h6>
                     <div class="text-muted" style="font-size:.8rem">{{ b.author }}</div>
-                    <div class="text-muted" style="font-size:.72rem" class="mono">ISBN: {{ b.isbn }}</div>
+                    <div class="text-muted" style="font-size:.72rem">ISBN: {{ b.isbn }}</div>
                     <div class="d-flex justify-content-between align-items-center mt-3">
                       <span class="badge" [class]="b.available_copies > 0 ? 'bg-success' : 'bg-secondary'">
                         {{ b.available_copies > 0 ? 'มี ' + b.available_copies + ' เล่ม' : 'ไม่ว่าง' }}
@@ -72,7 +83,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
                               [class.text-dark]="r.status === 'Borrowed'"
                               [class.bg-success]="r.status === 'Returned'"
                               [class.bg-danger]="r.status === 'Returned (Late)'">
-                          {{ r.status }}
+                          {{ r.status === 'Borrowed' ? 'กำลังยืม' : r.status === 'Returned' ? 'คืนแล้ว' : 'คืนล่าช้า' }}
                         </span>
                       </td>
                     </tr>
@@ -89,19 +100,22 @@ import { StudentApiService } from '../../core/services/student-api.service';
     </div>
   `,
   styles: [`
-    .book-card:hover { transform: translateY(-2px); }
+    .search-box { position:relative; }
+    .search-box i { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; z-index:1; }
+    .search-box .form-control { padding-left:36px; }
+    .book-card:hover { transform: translateY(-2px); transition:.2s; }
     .book-icon { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, #dbeafe, #ede9fe); display: flex; align-items: center; justify-content: center; color: #3b82f6; font-size: 1.25rem; }
   `]
 })
 export class StudentLibraryComponent implements OnInit {
   tab = signal<'search'|'borrowed'>('search');
   books = signal<any[]>([]); borrowed = signal<any[]>([]);
-  search = '';
+  search = ''; deptFilter = '';
 
   constructor(private api: StudentApiService) {}
   ngOnInit() { this.loadBooks(); }
 
-  loadBooks() { this.api.searchBooks(this.search).subscribe(r => { if (r.data) this.books.set(r.data as any[]); }); }
+  loadBooks() { this.api.searchBooks(this.search, this.deptFilter).subscribe(r => { if (r.data) this.books.set(r.data as any[]); }); }
   loadBorrowed() { this.api.getBorrowedBooks().subscribe(r => { if (r.data) this.borrowed.set(r.data as any[]); }); }
   isOverdue(r: any) { return !r.return_date && new Date(r.due_date) < new Date(); }
 }

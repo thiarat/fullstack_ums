@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -20,7 +20,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
               <button class="nav-link" [class.active]="tab() === 'my'" (click)="tab.set('my')">วิชาของฉัน</button>
             </li>
             <li class="nav-item">
-              <button class="nav-link" [class.active]="tab() === 'available'" (click)="tab.set('available'); loadAvailable()">เพิ่มรายวิชา</button>
+              <button class="nav-link" [class.active]="tab() === 'available'" (click)="switchToAvailable()">เพิ่มรายวิชา</button>
             </li>
           </ul>
 
@@ -29,7 +29,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
             <div class="card">
               <div class="table-responsive">
                 <table class="table">
-                  <thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th><th>แผนก</th><th>อาจารย์</th><th>เกรด</th><th></th></tr></thead>
+                  <thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th><th>แผนก</th><th>อาจารย์</th><th>วัน/เวลา</th><th>เกรด</th><th></th></tr></thead>
                   <tbody>
                     <tr *ngFor="let e of enrollments()" class="stagger-item">
                       <td><code>{{ e.course_code }}</code></td>
@@ -37,6 +37,10 @@ import { StudentApiService } from '../../core/services/student-api.service';
                       <td>{{ e.credits }}</td>
                       <td>{{ e.department }}</td>
                       <td class="text-muted" style="font-size:.82rem">{{ e.professor_name || '-' }}</td>
+                      <td class="text-muted" style="font-size:.78rem">
+                        <span *ngIf="e.day_of_week">{{ e.day_of_week }} {{ e.start_time | slice:0:5 }}–{{ e.end_time | slice:0:5 }}</span>
+                        <span *ngIf="!e.day_of_week">-</span>
+                      </td>
                       <td>
                         <span *ngIf="e.grade" class="badge" [class]="gradeColor(e.grade)">{{ e.grade }}</span>
                         <span *ngIf="!e.grade" class="text-muted">-</span>
@@ -49,74 +53,184 @@ import { StudentApiService } from '../../core/services/student-api.service';
                   </tbody>
                 </table>
               </div>
+              <div class="empty-state" *ngIf="!enrollments().length">
+                <i class="bi bi-journal-x"></i><p>ยังไม่มีรายวิชา</p>
+              </div>
             </div>
           </div>
 
           <!-- Available Courses -->
           <div *ngIf="tab() === 'available'">
-            <div class="d-flex gap-2 mb-3 align-items-center">
-              <label class="form-label mb-0">ภาคเรียน:</label>
-              <input type="text" class="form-control" style="max-width:120px" [(ngModel)]="semester" placeholder="1/2567">
+            <!-- semester + search + filter -->
+            <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 text-nowrap">ภาคเรียน:</label>
+                <input type="text" class="form-control" style="max-width:110px" [(ngModel)]="semester" placeholder="1/2567">
+              </div>
+              <div class="search-box" style="flex:1;max-width:280px">
+                <i class="bi bi-search"></i>
+                <input class="form-control" [(ngModel)]="courseSearch" (ngModelChange)="applyFilter()"
+                       placeholder="ค้นหารายวิชา, อาจารย์...">
+              </div>
+              <select class="form-select" style="max-width:200px" [(ngModel)]="deptFilter" (ngModelChange)="applyFilter()">
+                <option value="">ทุกแผนก</option>
+                <option *ngFor="let d of depts()" [value]="d">{{ d }}</option>
+              </select>
             </div>
+
+            <!-- conflict error -->
+            <div class="alert alert-danger d-flex align-items-center gap-2" *ngIf="conflictError()">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              {{ conflictError() }}
+            </div>
+
+            <!-- enrolled course_ids for marking -->
             <div class="row g-3">
-              <div class="col-md-6 col-lg-4 stagger-item" *ngFor="let c of available()">
-                <div class="card h-100">
+              <div class="col-md-6 col-lg-4 stagger-item" *ngFor="let c of filtered()">
+                <div class="card h-100" [class.enrolled-card]="isEnrolled(c)">
                   <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                      <code class="text-primary">{{ c.course_code }}</code>
-                      <span class="badge bg-primary">{{ c.credits }} หน่วยกิต</span>
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                      <code class="text-primary fw-bold">{{ c.course_code }}</code>
+                      <div class="d-flex gap-1 align-items-center">
+                        <span class="badge bg-primary">{{ c.credits }} หน่วยกิต</span>
+                        <span class="badge bg-success" *ngIf="isEnrolled(c)">ลงแล้ว ✓</span>
+                      </div>
                     </div>
-                    <h6 class="mt-2 mb-1">{{ c.title }}</h6>
+                    <h6 class="mb-1 fw-700">{{ c.title }}</h6>
                     <div class="text-muted" style="font-size:.8rem">
+                      <div><i class="bi bi-building me-1"></i>{{ c.department || '-' }}</div>
                       <div><i class="bi bi-person me-1"></i>{{ c.professor_name || 'ยังไม่มีอาจารย์' }}</div>
-                      <div *ngIf="c.day_of_week"><i class="bi bi-clock me-1"></i>{{ c.day_of_week }} {{ c.start_time }}–{{ c.end_time }}</div>
+                      <div *ngIf="c.day_of_week" [class.text-danger]="hasTimeConflict(c)">
+                        <i class="bi bi-clock me-1"></i>{{ c.day_of_week }}
+                        {{ c.start_time | slice:0:5 }}–{{ c.end_time | slice:0:5 }}
+                        <i class="bi bi-exclamation-triangle-fill text-danger ms-1" *ngIf="hasTimeConflict(c)" title="เวลาทับกับวิชาที่ลงแล้ว"></i>
+                      </div>
                     </div>
-                    <button class="btn btn-sm btn-primary w-100 mt-3" (click)="enroll(c.course_id)" [disabled]="!semester">
-                      ลงทะเบียน
+                    <button class="btn btn-sm w-100 mt-3"
+                            [class]="isEnrolled(c) ? 'btn-secondary' : hasTimeConflict(c) ? 'btn-outline-danger' : 'btn-primary'"
+                            [disabled]="isEnrolled(c) || !semester"
+                            (click)="enroll(c)">
+                      <span *ngIf="isEnrolled(c)">ลงทะเบียนแล้ว</span>
+                      <span *ngIf="!isEnrolled(c) && hasTimeConflict(c)">เวลาทับกัน</span>
+                      <span *ngIf="!isEnrolled(c) && !hasTimeConflict(c)">ลงทะเบียน</span>
                     </button>
                   </div>
                 </div>
               </div>
             </div>
+            <div class="empty-state" *ngIf="!filtered().length && !loadingAvail()">
+              <i class="bi bi-search"></i><p>ไม่พบรายวิชา</p>
+            </div>
+            <div class="text-center py-4" *ngIf="loadingAvail()">
+              <div class="spinner-border text-primary"></div>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    .search-box { position:relative; }
+    .search-box i { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; z-index:1; }
+    .search-box .form-control { padding-left:36px; }
+    .enrolled-card { border-color:#bbf7d0 !important; background:#f0fdf4; }
+    .fw-700 { font-weight:700; }
+    .empty-state { text-align:center; padding:60px; color:#94a3b8; }
+    .empty-state i { font-size:2.5rem; display:block; margin-bottom:12px; }
+  `]
 })
 export class StudentEnrollmentsComponent implements OnInit {
   tab = signal<'my'|'available'>('my');
-  enrollments = signal<any[]>([]);
-  available = signal<any[]>([]);
-  semester = '1/2567';
+  enrollments  = signal<any[]>([]);
+  available    = signal<any[]>([]);
+  filtered     = signal<any[]>([]);
+  depts        = signal<string[]>([]);
+  loadingAvail = signal(false);
+  semester     = '1/2568';
+  courseSearch = '';
+  deptFilter   = '';
   conflictError = signal('');
 
   constructor(private api: StudentApiService) {}
   ngOnInit() { this.loadMy(); }
 
+  switchToAvailable() {
+    this.tab.set('available');
+    if (!this.available().length) this.loadAvailable();
+  }
+
   loadMy() {
-    this.api.getEnrollments().subscribe(r => { if (r.data) this.enrollments.set(r.data as any[]); });
+    this.api.getEnrollments().subscribe(r => {
+      if (r.data) this.enrollments.set(r.data as any[]);
+    });
   }
 
   loadAvailable() {
-    this.api.getAvailableCourses().subscribe(r => { if (r.data) this.available.set(r.data as any[]); });
+    this.loadingAvail.set(true);
+    this.api.getAvailableCourses().subscribe(r => {
+      const data = (r.data as any) ?? [];
+      this.available.set(data);
+      // สร้าง dept list
+      const ds = [...new Set(data.map((c: any) => c.department).filter(Boolean))] as string[];
+      this.depts.set(ds.sort());
+      this.applyFilter();
+      this.loadingAvail.set(false);
+    });
   }
 
-  enroll(courseId: number) {
-    if (!this.semester) return;
+  applyFilter() {
+    let result = this.available();
+    if (this.deptFilter) result = result.filter(c => c.department === this.deptFilter);
+    if (this.courseSearch) {
+      const q = this.courseSearch.toLowerCase();
+      result = result.filter(c =>
+        c.title?.toLowerCase().includes(q) ||
+        c.course_code?.toLowerCase().includes(q) ||
+        c.professor_name?.toLowerCase().includes(q)
+      );
+    }
+    this.filtered.set(result);
+  }
+
+  isEnrolled(c: any): boolean {
+    // ตรวจว่า schedule_id นี้ลงแล้วหรือยัง (ป้องกันลง duplicate)
+    return this.enrollments().some(e => e.course_id === c.course_id && e.schedule_id === c.schedule_id);
+  }
+
+  hasTimeConflict(c: any): boolean {
+    if (!c.day_of_week || !c.start_time || !c.end_time) return false;
+    const toMin = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const cStart = toMin(c.start_time);
+    const cEnd = toMin(c.end_time);
+    return this.enrollments().some(e => {
+      if (e.day_of_week !== c.day_of_week) return false;
+      if (!e.start_time || !e.end_time) return false;
+      const eStart = toMin(e.start_time);
+      const eEnd = toMin(e.end_time);
+      // overlap: ถ้าช่วงเวลาใดๆ ทับกัน
+      return cStart < eEnd && cEnd > eStart;
+    });
+  }
+
+  enroll(c: any) {
+    if (!this.semester || this.isEnrolled(c)) return;
     this.conflictError.set('');
-    this.api.enrollCourse(courseId, this.semester).subscribe({
+    // ส่ง schedule_id ด้วยเพื่อให้ backend enroll ถูกอัน
+    this.api.enrollCourse(c.course_id, this.semester).subscribe({
       next: () => { this.loadMy(); this.loadAvailable(); this.tab.set('my'); },
       error: (e: any) => {
         const msg = e?.error?.message || 'เกิดข้อผิดพลาด';
         this.conflictError.set(msg);
-        setTimeout(() => this.conflictError.set(''), 6000);
+        setTimeout(() => this.conflictError.set(''), 8000);
       }
     });
   }
 
   withdraw(e: any) {
-    if (confirm(`ถอน ${e.course_code}?`))
+    if (confirm(`ถอนวิชา ${e.course_code}?`))
       this.api.withdrawCourse(e.enrollment_id).subscribe(() => this.loadMy());
   }
 

@@ -21,13 +21,14 @@ const DAY_TH: Record<string,string> = {
       <div class="main-content">
         <app-topbar title="รายวิชาของฉัน" subtitle="จัดการรายวิชาและตารางสอน" />
         <div class="page-content">
-  <div class="page-header">
+  <!-- Toolbar เหมือน admin professors -->
+  <div class="d-flex gap-2 mb-4 flex-wrap align-items-center">
     <div>
-      <h1 class="page-title">รายวิชาของฉัน</h1>
-      <p class="page-subtitle">{{ courses().length }} วิชา</p>
+      <h4 class="mb-0 fw-700" style="color:#1e293b">รายวิชาของฉัน</h4>
+      <p class="text-muted small mb-0">{{ courses().length }} วิชาที่สอน</p>
     </div>
-    <button class="btn-primary" (click)="openAddSchedule()">
-      <i class="bi bi-plus-circle"></i> เพิ่มตารางสอน
+    <button class="btn btn-primary ms-auto" (click)="openAddSchedule()">
+      <i class="bi bi-plus-circle me-1"></i> เพิ่มตารางสอน
     </button>
   </div>
 
@@ -223,12 +224,22 @@ export class ProfCoursesComponent implements OnInit {
     return 'bg-danger';
   }
 
-  ngOnInit() { this.loadCourses(); }
+  ngOnInit() { this.loadCourses(); this.loadDeptCourses(); }
 
   loadCourses() {
     this.api.getMyCourses().subscribe({
-      next: (r: any) => { this.courses.set(r.data); this.allCourses.set(r.data); this.loading.set(false); },
+      next: (r: any) => { this.courses.set(r.data); this.loading.set(false); },
       error: () => this.loading.set(false),
+    });
+  }
+
+  loadDeptCourses() {
+    this.api.getDeptCourses().subscribe({
+      next: (r: any) => { this.allCourses.set(r.data ?? []); },
+      error: () => {
+        // fallback: ใช้รายวิชาของตัวเองถ้า API ยังไม่มี
+        this.api.getMyCourses().subscribe((r: any) => this.allCourses.set(r.data ?? []));
+      }
     });
   }
 
@@ -281,4 +292,3 @@ export class ProfCoursesComponent implements OnInit {
     this.api.deleteSchedule(c.schedule_id).subscribe({ next: () => this.loadCourses() });
   }
 }
-

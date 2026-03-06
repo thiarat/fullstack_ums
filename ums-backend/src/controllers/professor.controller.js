@@ -21,6 +21,13 @@ exports.getMyCourses = async (req, res, next) => {
   } catch (e) { handleError(e, next); }
 };
 
+exports.getDeptCourses = async (req, res, next) => {
+  try {
+    const data = await professorService.getDeptCourses(req.user.prof_id);
+    res.json({ success: true, data });
+  } catch (e) { handleError(e, next); }
+};
+
 exports.getCourseStudents = async (req, res, next) => {
   try {
     const data = await professorService.getCourseStudents(req.user.prof_id, req.params.courseId);

@@ -82,7 +82,7 @@ const getAvailableCourses = async (studentId) => {
     `SELECT c.course_id, c.course_code, c.title, c.credits,
             d.name as department,
             p.first_name || ' ' || p.last_name as professor_name,
-            cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
             COUNT(e.enrollment_id) as enrolled_count
      FROM courses c
      LEFT JOIN departments d ON c.dept_id = d.dept_id
@@ -93,29 +93,52 @@ const getAvailableCourses = async (studentId) => {
        SELECT course_id FROM enrollments WHERE student_id = $1
      )
      GROUP BY c.course_id, d.name, p.first_name, p.last_name,
-              cs.day_of_week, cs.start_time, cs.end_time, cs.room_number
+              cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number
      ORDER BY c.course_code`,
     [studentId]
   );
   return result.rows;
 };
 
-const enrollCourse = async (studentId, courseId, semester) => {
-  // Check already enrolled
-  const existing = await db.query(
-    'SELECT enrollment_id FROM enrollments WHERE student_id = $1 AND course_id = $2 AND semester = $3',
-    [studentId, courseId, semester]
-  );
+const enrollCourse = async (studentId, courseId, semester, scheduleId) => {
+  // Check already enrolled in same course+schedule combination
+  let existing;
+  if (scheduleId) {
+    // ถ้ามี schedule_id ให้ตรวจสอบว่าลงทะเบียน schedule เดิมแล้วหรือยัง
+    existing = await db.query(
+      `SELECT e.enrollment_id FROM enrollments e
+       JOIN class_schedules cs ON e.course_id = cs.course_id
+       WHERE e.student_id = $1 AND e.course_id = $2 AND e.semester = $3
+         AND cs.schedule_id = $4`,
+      [studentId, courseId, semester, scheduleId]
+    );
+  } else {
+    existing = await db.query(
+      'SELECT enrollment_id FROM enrollments WHERE student_id = $1 AND course_id = $2 AND semester = $3',
+      [studentId, courseId, semester]
+    );
+  }
   if (existing.rows.length > 0) throw { statusCode: 409, message: 'ลงทะเบียนวิชานี้ในเทอมนี้แล้ว' };
 
-  // Check course exists + get schedule
-  const courseInfo = await db.query(
-    `SELECT c.course_id, cs.day_of_week, cs.start_time, cs.end_time
-     FROM courses c
-     LEFT JOIN class_schedules cs ON c.course_id = cs.course_id
-     WHERE c.course_id = $1`,
-    [courseId]
-  );
+  // Check course exists + get schedule by schedule_id or course_id
+  let courseInfo;
+  if (scheduleId) {
+    courseInfo = await db.query(
+      `SELECT c.course_id, cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time
+       FROM courses c
+       JOIN class_schedules cs ON c.course_id = cs.course_id
+       WHERE c.course_id = $1 AND cs.schedule_id = $2`,
+      [courseId, scheduleId]
+    );
+  } else {
+    courseInfo = await db.query(
+      `SELECT c.course_id, cs.day_of_week, cs.start_time, cs.end_time
+       FROM courses c
+       LEFT JOIN class_schedules cs ON c.course_id = cs.course_id
+       WHERE c.course_id = $1 LIMIT 1`,
+      [courseId]
+    );
+  }
   if (courseInfo.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบรายวิชา' };
 
   const newCourse = courseInfo.rows[0];
@@ -234,15 +257,22 @@ const getMyGrades = async (studentId) => {
 };
 
 // ─── LIBRARY ───────────────────────────────────────────────────
-const searchBooks = async ({ search = '', available = false }) => {
+const searchBooks = async ({ search = '', dept = '', available = false }) => {
   let query = `
-    SELECT book_id, isbn, title, author, total_copies, available_copies
-    FROM books
-    WHERE (title ILIKE $1 OR author ILIKE $1 OR isbn ILIKE $1)
+    SELECT b.book_id, b.isbn, b.title, b.author, b.total_copies, b.available_copies,
+           d.name as department
+    FROM books b
+    LEFT JOIN departments d ON b.dept_id = d.dept_id
+    WHERE (b.title ILIKE $1 OR b.author ILIKE $1 OR b.isbn ILIKE $1)
   `;
-  if (available) query += ' AND available_copies > 0';
-  query += ' ORDER BY title';
-  const result = await db.query(query, [`%${search}%`]);
+  const params = [`%${search}%`];
+  if (dept) {
+    params.push(dept);
+    query += ` AND d.name = $${params.length}`;
+  }
+  if (available) query += ' AND b.available_copies > 0';
+  query += ' ORDER BY b.title';
+  const result = await db.query(query, params);
   return result.rows;
 };
 

@@ -8,6 +8,7 @@ export class ProfessorApiService extends ApiService {
 
   getDashboard()                       { return this.get<any>('/professor/dashboard'); }
   getMyCourses()                       { return this.get<any[]>('/professor/courses'); }
+  getDeptCourses()                     { return this.get<any[]>('/professor/courses/dept-all'); }
   getCourseStudents(courseId: number)  { return this.get<any[]>(`/professor/courses/${courseId}/students`); }
   submitGrade(enrollmentId: number, grade: string) { return this.patch(`/professor/grades/${enrollmentId}`, { grade }); }
   submitBulkGrades(courseId: number, grades: { enrollment_id: number; grade: string }[]) {

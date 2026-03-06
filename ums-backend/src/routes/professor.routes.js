@@ -34,6 +34,7 @@ router.get('/dashboard', profCtrl.getDashboard);
  *       - bearerAuth: []
  */
 router.get('/courses', profCtrl.getMyCourses);
+router.get('/courses/dept-all', profCtrl.getDeptCourses);
 
 /**
  * @swagger
