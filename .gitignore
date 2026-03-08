@@ -1,3 +1,9 @@
 node_modules/
-*.zip
 .env
+.env.local
+.env*.local
+dist/
+.angular/
+.vercel/
+logs/
+*.zip
