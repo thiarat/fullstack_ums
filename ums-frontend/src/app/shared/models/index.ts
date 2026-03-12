@@ -8,10 +8,11 @@ export interface AuthUser {
   user_id: number;
   username: string;
   role: 'Admin' | 'Professor' | 'Student';
-  first_name: string;
-  last_name: string;
+  // [FIX] เป็น null ได้สำหรับ Admin ที่ไม่มีแถวใน professors/students
+  first_name: string | null;
+  last_name: string | null;
   student_id?: number;
-  prof_id?: number;
+  prof_id?: number | null;
   profile_image?: string;
 }
 
