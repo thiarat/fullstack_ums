@@ -30,7 +30,7 @@ exports.getDeptCourses = async (req, res, next) => {
 
 exports.getCourseStudents = async (req, res, next) => {
   try {
-    const data = await professorService.getCourseStudents(req.user.prof_id, req.params.courseId);
+    const data = await professorService.getCourseStudents(req.user.prof_id, +req.params.scheduleId);
     res.json({ success: true, data });
   } catch (e) { handleError(e, next); }
 };
@@ -52,8 +52,8 @@ exports.submitBulkGrades = async (req, res, next) => {
     if (!Array.isArray(grades) || grades.length === 0) {
       return res.status(400).json({ success: false, message: 'grades array is required.' });
     }
-    const data = await professorService.submitBulkGrades(req.user.prof_id, req.params.courseId, grades);
-    await logAction(req.user.user_id, `BULK_GRADE course=${req.params.courseId} count=${grades.length}`, 'enrollments', null);
+    const data = await professorService.submitBulkGrades(req.user.prof_id, +req.params.scheduleId, grades);
+    await logAction(req.user.user_id, `BULK_GRADE schedule=${req.params.scheduleId} count=${grades.length}`, 'enrollments', null);
     res.json({ success: true, message: `${data.length} grades submitted.`, data });
   } catch (e) { handleError(e, next); }
 };

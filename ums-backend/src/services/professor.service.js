@@ -67,15 +67,13 @@ const getMyCourses = async (profId) => {
   return result.rows;
 };
 
-const getCourseStudents = async (profId, courseId) => {
-  // Find all schedules this prof teaches for this course
-  const schedules = await db.query(
-    'SELECT schedule_id FROM class_schedules WHERE prof_id = $1 AND course_id = $2',
-    [profId, courseId]
+const getCourseStudents = async (profId, scheduleId) => {
+  // Verify this prof owns the schedule
+  const owns = await db.query(
+    'SELECT schedule_id FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2',
+    [scheduleId, profId]
   );
-  if (schedules.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
-
-  const scheduleIds = schedules.rows.map(r => r.schedule_id);
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this schedule.' };
 
   const result = await db.query(
     `SELECT e.enrollment_id, e.grade, e.semester, e.schedule_id,
@@ -84,9 +82,9 @@ const getCourseStudents = async (profId, courseId) => {
      FROM enrollments e
      JOIN students s ON e.student_id = s.student_id
      JOIN users u ON s.user_id = u.user_id
-     WHERE e.schedule_id = ANY($1::int[])
+     WHERE e.schedule_id = $1
      ORDER BY s.last_name, s.first_name`,
-    [scheduleIds]
+    [scheduleId]
   );
   return result.rows;
 };
@@ -116,15 +114,14 @@ const submitGrade = async (profId, enrollmentId, grade) => {
   return result.rows[0];
 };
 
-const submitBulkGrades = async (profId, courseId, grades) => {
-  // Get schedule_ids this prof teaches for this course
+const submitBulkGrades = async (profId, scheduleId, grades) => {
+  // Verify this prof owns the specific schedule
   const owns = await db.query(
-    'SELECT schedule_id FROM class_schedules WHERE prof_id = $1 AND course_id = $2',
-    [profId, courseId]
+    'SELECT schedule_id FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2',
+    [scheduleId, profId]
   );
-  if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this schedule.' };
 
-  const scheduleIds = owns.rows.map(r => r.schedule_id);
   const validGrades = ['A', 'B+', 'B', 'C+', 'C', 'D+', 'D', 'F', 'W', 'I'];
   const client = await db.getClient();
 
@@ -135,10 +132,10 @@ const submitBulkGrades = async (profId, courseId, grades) => {
       if (!validGrades.includes(grade)) {
         throw { statusCode: 400, message: `Invalid grade "${grade}" for enrollment_id ${enrollment_id}` };
       }
-      // Only update enrollments belonging to this prof's schedules
+      // Only update enrollments belonging to this specific schedule section
       const r = await client.query(
-        'UPDATE enrollments SET grade = $1 WHERE enrollment_id = $2 AND schedule_id = ANY($3::int[]) RETURNING *',
-        [grade, enrollment_id, scheduleIds]
+        'UPDATE enrollments SET grade = $1 WHERE enrollment_id = $2 AND schedule_id = $3 RETURNING *',
+        [grade, enrollment_id, scheduleId]
       );
       if (r.rows.length > 0) results.push(r.rows[0]);
     }

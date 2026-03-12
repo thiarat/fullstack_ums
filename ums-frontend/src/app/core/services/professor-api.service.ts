@@ -9,10 +9,10 @@ export class ProfessorApiService extends ApiService {
   getDashboard()                       { return this.get<any>('/professor/dashboard'); }
   getMyCourses()                       { return this.get<any[]>('/professor/courses'); }
   getDeptCourses()                     { return this.get<any[]>('/professor/courses/dept-all'); }
-  getCourseStudents(courseId: number)  { return this.get<any[]>(`/professor/courses/${courseId}/students`); }
+  getCourseStudents(scheduleId: number)  { return this.get<any[]>(`/professor/courses/${scheduleId}/students`); }
   submitGrade(enrollmentId: number, grade: string) { return this.patch(`/professor/grades/${enrollmentId}`, { grade }); }
-  submitBulkGrades(courseId: number, grades: { enrollment_id: number; grade: string }[]) {
-    return this.post(`/professor/courses/${courseId}/grades`, { grades });
+  submitBulkGrades(scheduleId: number, grades: { enrollment_id: number; grade: string }[]) {
+    return this.post(`/professor/courses/${scheduleId}/grades`, { grades });
   }
   getSchedule()                        { return this.get<any[]>('/professor/schedule'); }
   addSchedule(body: any)               { return this.post('/professor/schedule', body); }

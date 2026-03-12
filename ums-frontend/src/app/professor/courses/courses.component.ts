@@ -278,7 +278,7 @@ export class ProfCoursesComponent implements OnInit {
     this.selectedCourse.set(c);
     this.studentsModal.set(true);
     this.studentsLoading.set(true);
-    this.api.getCourseStudents(c.course_id).subscribe({
+    this.api.getCourseStudents(c.schedule_id).subscribe({
       next: (r: any) => { this.students.set(r.data); this.studentsLoading.set(false); },
       error: () => this.studentsLoading.set(false),
     });
