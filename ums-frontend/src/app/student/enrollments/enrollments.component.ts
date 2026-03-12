@@ -84,7 +84,6 @@ import { StudentApiService } from '../../core/services/student-api.service';
               {{ conflictError() }}
             </div>
 
-            <!-- enrolled course_ids for marking -->
             <div class="row g-3">
               <div class="col-md-6 col-lg-4 stagger-item" *ngFor="let c of filtered()">
                 <div class="card h-100" [class.enrolled-card]="isEnrolled(c)">
@@ -103,7 +102,8 @@ import { StudentApiService } from '../../core/services/student-api.service';
                       <div *ngIf="c.day_of_week" [class.text-danger]="hasTimeConflict(c)">
                         <i class="bi bi-clock me-1"></i>{{ c.day_of_week }}
                         {{ c.start_time | slice:0:5 }}–{{ c.end_time | slice:0:5 }}
-                        <i class="bi bi-exclamation-triangle-fill text-danger ms-1" *ngIf="hasTimeConflict(c)" title="เวลาทับกับวิชาที่ลงแล้ว"></i>
+                        <i class="bi bi-exclamation-triangle-fill text-danger ms-1"
+                           *ngIf="hasTimeConflict(c)" title="เวลาทับกับวิชาที่ลงแล้ว"></i>
                       </div>
                     </div>
                     <button class="btn btn-sm w-100 mt-3"
@@ -170,7 +170,6 @@ export class StudentEnrollmentsComponent implements OnInit {
     this.api.getAvailableCourses().subscribe(r => {
       const data = (r.data as any) ?? [];
       this.available.set(data);
-      // สร้าง dept list
       const ds = [...new Set(data.map((c: any) => c.department).filter(Boolean))] as string[];
       this.depts.set(ds.sort());
       this.applyFilter();
@@ -193,8 +192,11 @@ export class StudentEnrollmentsComponent implements OnInit {
   }
 
   isEnrolled(c: any): boolean {
-    // ตรวจว่า schedule_id นี้ลงแล้วหรือยัง (ป้องกันลง duplicate)
-    return this.enrollments().some(e => e.course_id === c.course_id && e.schedule_id === c.schedule_id);
+    // เช็คทั้ง course_id + schedule_id เพื่อรองรับวิชาที่มีหลายตาราง
+    return this.enrollments().some(e =>
+      e.course_id === c.course_id &&
+      (c.schedule_id ? e.schedule_id === c.schedule_id : true)
+    );
   }
 
   hasTimeConflict(c: any): boolean {
@@ -204,13 +206,12 @@ export class StudentEnrollmentsComponent implements OnInit {
       return h * 60 + m;
     };
     const cStart = toMin(c.start_time);
-    const cEnd = toMin(c.end_time);
+    const cEnd   = toMin(c.end_time);
     return this.enrollments().some(e => {
       if (e.day_of_week !== c.day_of_week) return false;
       if (!e.start_time || !e.end_time) return false;
       const eStart = toMin(e.start_time);
-      const eEnd = toMin(e.end_time);
-      // overlap: ถ้าช่วงเวลาใดๆ ทับกัน
+      const eEnd   = toMin(e.end_time);
       return cStart < eEnd && cEnd > eStart;
     });
   }
@@ -218,8 +219,10 @@ export class StudentEnrollmentsComponent implements OnInit {
   enroll(c: any) {
     if (!this.semester || this.isEnrolled(c)) return;
     this.conflictError.set('');
-    // ส่ง schedule_id ด้วยเพื่อให้ backend enroll ถูกอัน
-    this.api.enrollCourse(c.course_id, this.semester).subscribe({
+
+    // [FIX] ส่ง schedule_id ไปด้วย เพื่อให้ backend enroll ถูกตาราง
+    //       student.service.js enrollCourse จะ check time conflict บน server ด้วย
+    this.api.enrollCourse(c.course_id, this.semester, c.schedule_id).subscribe({
       next: () => { this.loadMy(); this.loadAvailable(); this.tab.set('my'); },
       error: (e: any) => {
         const msg = e?.error?.message || 'เกิดข้อผิดพลาด';
