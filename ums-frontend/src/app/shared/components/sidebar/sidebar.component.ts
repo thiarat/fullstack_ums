@@ -1,9 +1,10 @@
-import { Component, computed } from '@angular/core';
+import { Component, OnInit, computed, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { AdminApiService } from '../../../core/services/admin-api.service';
 
-interface NavItem { label: string; icon: string; path: string; }
+interface NavItem { label: string; icon: string; path: string; badgeKey?: string; }
 
 @Component({
   selector: 'app-sidebar',
@@ -36,7 +37,10 @@ interface NavItem { label: string; icon: string; path: string; }
            [routerLink]="item.path"
            routerLinkActive="active">
           <i class="bi" [class]="item.icon"></i>
-          <span>{{ item.label }}</span>
+          <span class="nav-label">{{ item.label }}</span>
+          <span class="nav-badge" *ngIf="item.badgeKey && getBadge(item.badgeKey) > 0">
+            {{ getBadge(item.badgeKey) }}
+          </span>
         </a>
       </div>
 
@@ -107,13 +111,26 @@ interface NavItem { label: string; icon: string; path: string; }
       &:hover { background: rgba(255,255,255,.07); color: #e2e8f0; }
       &.active { background: rgba(59,130,246,.2); color: #60a5fa; }
     }
+    .nav-label { flex: 1; }
+    .nav-badge {
+      background: #ef4444; color: white;
+      border-radius: 999px; font-size: .65rem; font-weight: 700;
+      min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+      padding: 0 .35rem; line-height: 1; flex-shrink: 0;
+    }
     .sidebar-footer { padding: .75rem 0 1rem; border-top: 1px solid rgba(255,255,255,.06); }
     .logout-btn { color: #64748b; text-align: left;
       &:hover { color: #ef4444 !important; background: rgba(239,68,68,.1) !important; }
     }
   `]
 })
-export class SidebarComponent {
+export class SidebarComponent implements OnInit {
+  private adminApi = inject(AdminApiService);
+
+  badges: Record<string, number> = {};
+
+  getBadge(key: string): number { return this.badges[key] ?? 0; }
+
   initials = computed(() => {
     const u = this.auth.user();
     return `${u?.first_name?.[0] ?? ''}${u?.last_name?.[0] ?? ''}`.toUpperCase() || '?';
@@ -122,31 +139,48 @@ export class SidebarComponent {
   navItems = computed<NavItem[]>(() => {
     const role = this.auth.role();
     if (role === 'Admin') return [
-      { label: 'Dashboard',    icon: 'bi-speedometer2',    path: '/admin/dashboard' },
-      { label: 'นักศึกษา',    icon: 'bi-people-fill',     path: '/admin/students' },
-      { label: 'อาจารย์',     icon: 'bi-person-badge',    path: '/admin/professors' },
-      { label: 'แผนก',        icon: 'bi-building',         path: '/admin/departments' },
-      { label: 'รายวิชา',          icon: 'bi-book',              path: '/admin/courses' },
-      { label: 'รายวิชา - อาจารย์', icon: 'bi-person-video2',    path: '/admin/courses-profs' },
-      { label: 'ห้องสมุด',         icon: 'bi-journal-bookmark',  path: '/admin/library' },
-      { label: 'System Logs', icon: 'bi-clipboard-data',   path: '/admin/logs' },
+      { label: 'Dashboard',          icon: 'bi-speedometer2',    path: '/admin/dashboard' },
+      { label: 'นักศึกษา',           icon: 'bi-people-fill',     path: '/admin/students' },
+      { label: 'อาจารย์',            icon: 'bi-person-badge',    path: '/admin/professors' },
+      { label: 'แผนก',               icon: 'bi-building',        path: '/admin/departments' },
+      { label: 'รายวิชา',            icon: 'bi-book',            path: '/admin/courses' },
+      { label: 'รายวิชา - อาจารย์',  icon: 'bi-person-video2',   path: '/admin/courses-profs' },
+      { label: 'ตารางสอบ',           icon: 'bi-calendar-event',  path: '/admin/exam-schedules' },
+      { label: 'ห้องสมุด',           icon: 'bi-journal-bookmark',path: '/admin/library' },
+      { label: 'รีเซ็ตรหัสผ่าน',    icon: 'bi-key',             path: '/admin/password-reset', badgeKey: 'passwordReset' },
+      { label: 'System Logs',        icon: 'bi-clipboard-data',  path: '/admin/logs' },
     ];
     if (role === 'Professor') return [
       { label: 'Dashboard',     icon: 'bi-speedometer2',   path: '/professor/dashboard' },
       { label: 'รายวิชาของฉัน', icon: 'bi-book',           path: '/professor/courses' },
       { label: 'ตารางสอน',     icon: 'bi-calendar3',      path: '/professor/schedule' },
       { label: 'บันทึกเกรด',   icon: 'bi-pencil-square',  path: '/professor/grades' },
+      { label: 'กำหนดวันสอบ',  icon: 'bi-calendar-event', path: '/professor/exam-schedules' },
     ];
     if (role === 'Student') return [
-      { label: 'Dashboard',    icon: 'bi-speedometer2',      path: '/student/dashboard' },
-      { label: 'ลงทะเบียน',   icon: 'bi-journal-plus',      path: '/student/enrollments' },
-      { label: 'ตารางเรียน',  icon: 'bi-calendar3',         path: '/student/schedule' },
-      { label: 'ตารางสอบ',    icon: 'bi-file-earmark-text', path: '/student/exams' },
-      { label: 'ผลการเรียน',  icon: 'bi-bar-chart',         path: '/student/grades' },
-      { label: 'ห้องสมุด',    icon: 'bi-journal-bookmark',  path: '/student/library' },
+      { label: 'Dashboard',    icon: 'bi-speedometer2',  path: '/student/dashboard' },
+      { label: 'ลงทะเบียน',   icon: 'bi-journal-plus',  path: '/student/enrollments' },
+      { label: 'ตารางเรียน',  icon: 'bi-calendar3',     path: '/student/schedule' },
+      { label: 'ผลการเรียน',  icon: 'bi-bar-chart',     path: '/student/grades' },
+      { label: 'ห้องสมุด',    icon: 'bi-journal-bookmark', path: '/student/library' },
     ];
     return [];
   });
 
   constructor(public auth: AuthService) {}
+
+  ngOnInit() {
+    if (this.auth.role() === 'Admin') {
+      this.fetchPendingCount();
+    }
+  }
+
+  fetchPendingCount() {
+    this.adminApi.getPasswordResetRequests().subscribe({
+      next: (res: any) => {
+        this.badges['passwordReset'] = (res.data || []).length;
+      },
+      error: () => {}
+    });
+  }
 }

@@ -204,6 +204,24 @@ const getPasswordResetRequests = async () => {
   return result.rows;
 };
 
+const getPasswordResetHistory = async () => {
+  const result = await db.query(
+    `SELECT pr.request_id, pr.user_id, pr.status, pr.created_at, pr.resolved_at,
+            u.username, u.email, r.role_name,
+            COALESCE(s.first_name, p.first_name) as first_name,
+            COALESCE(s.last_name,  p.last_name)  as last_name
+     FROM password_reset_requests pr
+     JOIN users u   ON pr.user_id = u.user_id
+     JOIN roles r   ON u.role_id  = r.role_id
+     LEFT JOIN students s   ON u.user_id = s.user_id
+     LEFT JOIN professors p ON u.user_id = p.user_id
+     WHERE pr.status IN ('approved', 'rejected')
+     ORDER BY pr.resolved_at DESC
+     LIMIT 200`
+  );
+  return result.rows;
+};
+
 const approvePasswordReset = async (requestId, newPassword, adminUserId) => {
   const req = await db.query(
     `SELECT * FROM password_reset_requests WHERE request_id = $1 AND status = 'pending'`,
@@ -446,6 +464,62 @@ const getCourseProfStudents = async (scheduleId) => {
   return result.rows;
 };
 
+// ─── EXAM SCHEDULES (ADMIN) ────────────────────────────────────
+const getAllExamSchedules = async ({ search, dept_id, exam_type } = {}) => {
+  const conditions = [];
+  const params = [];
+  let i = 1;
+
+  if (search) {
+    conditions.push(`(c.course_code ILIKE $${i} OR c.title ILIKE $${i} OR p.first_name ILIKE $${i} OR p.last_name ILIKE $${i})`);
+    params.push(`%${search}%`); i++;
+  }
+  if (dept_id) { conditions.push(`d.dept_id = $${i}`); params.push(dept_id); i++; }
+  if (exam_type) { conditions.push(`es.exam_type = $${i}`); params.push(exam_type); i++; }
+
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  const result = await db.query(
+    `SELECT es.exam_id, es.exam_type, es.exam_date, es.start_time, es.end_time, es.room_number,
+            c.course_id, c.course_code, c.title as course_title,
+            CONCAT(p.first_name, ' ', p.last_name) as prof_name,
+            d.name as dept_name, d.dept_id, cs.schedule_id
+     FROM exam_schedules es
+     JOIN courses c ON es.course_id = c.course_id
+     LEFT JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+     LEFT JOIN professors p ON cs.prof_id = p.prof_id
+     LEFT JOIN departments d ON c.dept_id = d.dept_id
+     ${where}
+     ORDER BY es.exam_date DESC NULLS LAST, c.course_code`,
+    params
+  );
+  return result.rows;
+};
+
+const adminUpdateExamSchedule = async (examId, data) => {
+  const { exam_type, exam_date, start_time, end_time, room_number } = data;
+  const sets = []; const params = []; let i = 1;
+  if (exam_type)   { sets.push(`exam_type = $${i++}`);   params.push(exam_type); }
+  if (exam_date)   { sets.push(`exam_date = $${i++}`);   params.push(exam_date); }
+  if (start_time)  { sets.push(`start_time = $${i++}`);  params.push(start_time); }
+  if (end_time)    { sets.push(`end_time = $${i++}`);    params.push(end_time); }
+  if (room_number !== undefined) { sets.push(`room_number = $${i++}`); params.push(room_number); }
+  if (sets.length === 0) throw { statusCode: 400, message: 'No fields to update' };
+  params.push(examId);
+  const result = await db.query(
+    `UPDATE exam_schedules SET ${sets.join(', ')} WHERE exam_id = $${i} RETURNING *`,
+    params
+  );
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบตารางสอบ' };
+  return result.rows[0];
+};
+
+const adminDeleteExamSchedule = async (examId) => {
+  const result = await db.query('DELETE FROM exam_schedules WHERE exam_id=$1 RETURNING exam_id', [examId]);
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบตารางสอบ' };
+  return { deleted: true };
+};
+
 // ─── SYSTEM LOGS ───────────────────────────────────────────────
 const getSystemLogs = async ({ page = 1, limit = 50 }) => {
   const offset = (page - 1) * limit;
@@ -467,10 +541,11 @@ module.exports = {
   getDashboardStats,
   getAllStudents, getStudentById, getStudentSchedule, updateStudentStatus,
   createUser, updateUser, deleteUser,
-  adminResetPassword, getPasswordResetRequests, approvePasswordReset, rejectPasswordReset,
+  adminResetPassword, getPasswordResetRequests, getPasswordResetHistory, approvePasswordReset, rejectPasswordReset,
   getAllProfessors, getProfSchedule,
   getAllDepartments, createDepartment, updateDepartment, deleteDepartment,
   getAllCourses, createCourse, updateCourse, deleteCourse, getCourseSchedule,
   getCourseProfList, getCourseProfStudents,
+  getAllExamSchedules, adminUpdateExamSchedule, adminDeleteExamSchedule,
   getSystemLogs,
 };

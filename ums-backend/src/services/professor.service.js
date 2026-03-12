@@ -199,13 +199,14 @@ const deleteSchedule = async (profId, scheduleId) => {
 };
 
 // ─── EXAM SCHEDULE ─────────────────────────────────────────────
+// ดูตารางสอบทั้งหมดของอาจารย์ (student-facing)
 const getMyExamSchedule = async (profId) => {
   const result = await db.query(
     `SELECT es.exam_id, es.exam_type, es.exam_date, es.start_time, es.end_time, es.room_number,
-            c.course_code, c.title as course_title
+            c.course_code, c.title as course_title, cs.schedule_id
      FROM exam_schedules es
-     JOIN courses c ON es.course_id = c.course_id
-     JOIN class_schedules cs ON c.course_id = cs.course_id
+     JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+     JOIN courses c ON cs.course_id = c.course_id
      WHERE cs.prof_id = $1
      ORDER BY es.exam_date, es.start_time`,
     [profId]
@@ -213,19 +214,82 @@ const getMyExamSchedule = async (profId) => {
   return result.rows;
 };
 
-const createExamSchedule = async (profId, { course_id, exam_type, exam_date, start_time, end_time, room_number }) => {
-  const owns = await db.query(
-    'SELECT schedule_id FROM class_schedules WHERE prof_id = $1 AND course_id = $2',
-    [profId, course_id]
+// ดูรายวิชาที่อาจารย์สอน พร้อมสถานะกลางภาค/ปลายภาค (สำหรับหน้ากำหนดสอบ)
+const getMyCourseExams = async (profId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, c.course_id, c.course_code, c.title as course_title,
+            cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            mid.exam_id    as mid_exam_id,   mid.exam_date  as mid_date,
+            mid.start_time as mid_start,     mid.end_time   as mid_end,
+            mid.room_number as mid_room,
+            fin.exam_id    as fin_exam_id,   fin.exam_date  as fin_date,
+            fin.start_time as fin_start,     fin.end_time   as fin_end,
+            fin.room_number as fin_room
+     FROM class_schedules cs
+     JOIN courses c ON cs.course_id = c.course_id
+     LEFT JOIN exam_schedules mid ON mid.schedule_id = cs.schedule_id AND mid.exam_type = 'Midterm'
+     LEFT JOIN exam_schedules fin ON fin.schedule_id = cs.schedule_id AND fin.exam_type = 'Final'
+     WHERE cs.prof_id = $1
+     ORDER BY c.course_code`,
+    [profId]
   );
-  if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
+  return result.rows;
+};
+
+const createExamSchedule = async (profId, { schedule_id, exam_type, exam_date, start_time, end_time, room_number }) => {
+  // ตรวจสอบว่า prof เป็นเจ้าของ schedule
+  const owns = await db.query(
+    'SELECT schedule_id, course_id FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2',
+    [schedule_id, profId]
+  );
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'ไม่มีสิทธิ์กำหนดสอบสำหรับวิชานี้' };
+
+  const { course_id } = owns.rows[0];
+  const type = exam_type || 'Final';
+
+  // ตรวจซ้ำ
+  const dup = await db.query(
+    'SELECT exam_id FROM exam_schedules WHERE schedule_id = $1 AND exam_type = $2',
+    [schedule_id, type]
+  );
+  if (dup.rows.length > 0) throw { statusCode: 409, message: `มีตารางสอบ${type === 'Midterm' ? 'กลางภาค' : 'ปลายภาค'}อยู่แล้ว` };
 
   const result = await db.query(
-    `INSERT INTO exam_schedules (course_id, exam_type, exam_date, start_time, end_time, room_number)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [course_id, exam_type || 'Final', exam_date, start_time, end_time, room_number]
+    `INSERT INTO exam_schedules (course_id, schedule_id, exam_type, exam_date, start_time, end_time, room_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [course_id, schedule_id, type, exam_date, start_time, end_time, room_number]
   );
   return result.rows[0];
+};
+
+const updateExamSchedule = async (profId, examId, { exam_date, start_time, end_time, room_number }) => {
+  const owns = await db.query(
+    `SELECT es.exam_id FROM exam_schedules es
+     JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+     WHERE es.exam_id = $1 AND cs.prof_id = $2`,
+    [examId, profId]
+  );
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'ไม่มีสิทธิ์แก้ไขตารางสอบนี้' };
+
+  const result = await db.query(
+    `UPDATE exam_schedules SET exam_date=$1, start_time=$2, end_time=$3, room_number=$4
+     WHERE exam_id=$5 RETURNING *`,
+    [exam_date, start_time, end_time, room_number, examId]
+  );
+  return result.rows[0];
+};
+
+const deleteExamSchedule = async (profId, examId) => {
+  const owns = await db.query(
+    `SELECT es.exam_id FROM exam_schedules es
+     JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+     WHERE es.exam_id = $1 AND cs.prof_id = $2`,
+    [examId, profId]
+  );
+  if (owns.rows.length === 0) throw { statusCode: 403, message: 'ไม่มีสิทธิ์ลบตารางสอบนี้' };
+
+  await db.query('DELETE FROM exam_schedules WHERE exam_id = $1', [examId]);
+  return { deleted: true };
 };
 
 // ─── SCHEDULE MANAGEMENT ───────────────────────────────────────
@@ -332,7 +396,7 @@ module.exports = {
   getProfessorDashboard,
   getMyCourses, getDeptCourses, getCourseStudents,
   submitGrade, submitBulkGrades,
-  getMySchedule, getMyExamSchedule,
+  getMySchedule, getMyExamSchedule, getMyCourseExams,
   addCourseSchedule, updateCourseSchedule, deleteCourseSchedule,
-  createExamSchedule,
+  createExamSchedule, updateExamSchedule, deleteExamSchedule,
 };

@@ -20,4 +20,7 @@ export class ProfessorApiService extends ApiService {
   deleteSchedule(scheduleId: number)   { return this.delete(`/professor/schedule/${scheduleId}`); }
   getExams()                           { return this.get<any[]>('/professor/exams'); }
   createExam(body: any)                { return this.post('/professor/exams', body); }
+  getCourseExams()                     { return this.get<any[]>('/professor/exams/courses'); }
+  updateExam(examId: number, body: any){ return this.put(`/professor/exams/${examId}`, body); }
+  deleteExam(examId: number)           { return this.delete(`/professor/exams/${examId}`); }
 }

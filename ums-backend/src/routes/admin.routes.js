@@ -22,6 +22,7 @@ router.patch('/users/:id/reset-password',            adminCtrl.adminResetPasswor
 
 // Password Reset Requests (NEW)
 router.get('/password-reset-requests',               adminCtrl.getPasswordResetRequests);
+router.get('/password-reset-requests/history',       adminCtrl.getPasswordResetHistory);
 router.post('/password-reset-requests/:requestId/approve', adminCtrl.approvePasswordReset);
 router.post('/password-reset-requests/:requestId/reject',  adminCtrl.rejectPasswordReset);
 
@@ -47,6 +48,11 @@ router.delete('/courses/:id',adminCtrl.deleteCourse);
 // Courses-Profs list (รายวิชา-อาจารย์)
 router.get('/courses-profs',                              adminCtrl.getCourseProfList);
 router.get('/courses-profs/:scheduleId/students',         adminCtrl.getCourseProfStudents);
+
+// Exam Schedules
+router.get('/exam-schedules',              adminCtrl.getExamSchedules);
+router.put('/exam-schedules/:examId',      adminCtrl.updateExamSchedule);
+router.delete('/exam-schedules/:examId',   adminCtrl.deleteExamSchedule);
 
 // Logs
 router.get('/logs', adminCtrl.getSystemLogs);

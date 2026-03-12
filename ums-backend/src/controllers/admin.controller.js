@@ -55,8 +55,9 @@ exports.adminResetPassword = wrap(async (req) => {
   return r;
 });
 
-// NEW: password reset requests list
+// NEW: password reset requests list + history
 exports.getPasswordResetRequests = wrap(async () => adminService.getPasswordResetRequests());
+exports.getPasswordResetHistory   = wrap(async () => adminService.getPasswordResetHistory());
 
 // NEW: approve reset request
 exports.approvePasswordReset = wrap(async (req) => {
@@ -116,6 +117,19 @@ exports.deleteCourse  = wrap(async (req) => {
 // Courses-Profs (รายวิชา-อาจารย์)
 exports.getCourseProfList     = wrap(async (req) => adminService.getCourseProfList(req.query));
 exports.getCourseProfStudents = wrap(async (req) => adminService.getCourseProfStudents(+req.params.scheduleId));
+
+// Exam Schedules
+exports.getExamSchedules = wrap(async (req) => adminService.getAllExamSchedules(req.query));
+exports.updateExamSchedule = wrap(async (req) => {
+  const r = await adminService.adminUpdateExamSchedule(+req.params.examId, req.body);
+  await logAction(req.user.user_id, `ADMIN_UPDATE_EXAM id=${req.params.examId}`, 'exam_schedules', +req.params.examId);
+  return r;
+});
+exports.deleteExamSchedule = wrap(async (req) => {
+  const r = await adminService.adminDeleteExamSchedule(+req.params.examId);
+  await logAction(req.user.user_id, `ADMIN_DELETE_EXAM id=${req.params.examId}`, 'exam_schedules', +req.params.examId);
+  return r;
+});
 
 // Logs
 exports.getSystemLogs = wrap(async (req) => adminService.getSystemLogs(req.query));

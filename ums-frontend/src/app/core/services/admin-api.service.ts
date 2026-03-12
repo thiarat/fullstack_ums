@@ -26,6 +26,7 @@ export class AdminApiService extends ApiService {
 
   // Password Reset Requests
   getPasswordResetRequests() { return this.get<any>('/admin/password-reset-requests'); }
+  getPasswordResetHistory()  { return this.get<any>('/admin/password-reset-requests/history'); }
   approvePasswordReset(requestId: number, newPassword: string) {
     return this.post<any>(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
   }
@@ -66,6 +67,11 @@ export class AdminApiService extends ApiService {
   createCourse(body: any) { return this.post<any>('/admin/courses', body); }
   updateCourse(id: number, body: any) { return this.put<any>(`/admin/courses/${id}`, body); }
   deleteCourse(id: number) { return this.delete<any>(`/admin/courses/${id}`); }
+
+  // Exam Schedules
+  getExamSchedules(params: any = {}) { return this.get<any>('/admin/exam-schedules', params); }
+  updateExamSchedule(examId: number, body: any) { return this.put<any>(`/admin/exam-schedules/${examId}`, body); }
+  deleteExamSchedule(examId: number) { return this.delete<any>(`/admin/exam-schedules/${examId}`); }
 
   // System Logs — รับ page, limit แบบ positional
   getSystemLogs(page = 1, limit = 50) {

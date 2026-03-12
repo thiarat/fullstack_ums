@@ -193,5 +193,8 @@ router.delete("/schedule/:scheduleId", profCtrl.deleteSchedule);
  */
 router.get('/exams', profCtrl.getExamSchedule);
 router.post('/exams', profCtrl.createExamSchedule);
+router.get('/exams/courses', profCtrl.getCourseExams);
+router.put('/exams/:examId', profCtrl.updateExamSchedule);
+router.delete('/exams/:examId', profCtrl.deleteExamSchedule);
 
 module.exports = router;
