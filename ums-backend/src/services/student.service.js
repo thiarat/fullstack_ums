@@ -10,8 +10,10 @@ const getStudentDashboard = async (studentId) => {
        WHERE s.student_id = $1`,
       [studentId]
     ),
-    db.query('SELECT COUNT(*) FROM enrollments WHERE student_id = $1 AND (grade IS NULL OR grade NOT IN (\'W\',\'F\'))', [studentId]),
-    // ตารางสอบ: เรียงจากใกล้สุด ไม่จำกัด 30 วัน
+    db.query(
+      `SELECT COUNT(*) FROM enrollments WHERE student_id = $1 AND (grade IS NULL OR grade NOT IN ('W','F'))`,
+      [studentId]
+    ),
     db.query(
       `SELECT e.exam_id, e.exam_type, e.exam_date, e.start_time, e.end_time, e.room_number,
               c.course_code, c.title as course_title,
@@ -23,8 +25,10 @@ const getStudentDashboard = async (studentId) => {
        ORDER BY e.exam_date, e.start_time`,
       [studentId]
     ),
-    db.query(`SELECT COUNT(*) FROM library_records WHERE student_id = $1 AND status = 'Borrowed'`, [studentId]),
-    // GPA คำนวณ
+    db.query(
+      `SELECT COUNT(*) FROM library_records WHERE student_id = $1 AND status = 'Borrowed'`,
+      [studentId]
+    ),
     db.query(
       `SELECT
          COUNT(*) FILTER (WHERE grade IS NOT NULL AND grade NOT IN ('W','I')) as graded_count,
@@ -47,7 +51,7 @@ const getStudentDashboard = async (studentId) => {
     profile: profile.rows[0],
     stats: {
       enrolledCourses: parseInt(enrollments.rows[0].count),
-      borrowedBooks: parseInt(borrowedBooks.rows[0].count),
+      borrowedBooks:   parseInt(borrowedBooks.rows[0].count),
       gpa: gpaResult.rows[0].gpa ? parseFloat(gpaResult.rows[0].gpa) : null,
     },
     upcomingExams: upcomingExams.rows,
@@ -101,10 +105,8 @@ const getAvailableCourses = async (studentId) => {
 };
 
 const enrollCourse = async (studentId, courseId, semester, scheduleId) => {
-  // Check already enrolled in same course+schedule combination
   let existing;
   if (scheduleId) {
-    // ถ้ามี schedule_id ให้ตรวจสอบว่าลงทะเบียน schedule เดิมแล้วหรือยัง
     existing = await db.query(
       `SELECT e.enrollment_id FROM enrollments e
        JOIN class_schedules cs ON e.course_id = cs.course_id
@@ -120,7 +122,6 @@ const enrollCourse = async (studentId, courseId, semester, scheduleId) => {
   }
   if (existing.rows.length > 0) throw { statusCode: 409, message: 'ลงทะเบียนวิชานี้ในเทอมนี้แล้ว' };
 
-  // Check course exists + get schedule by schedule_id or course_id
   let courseInfo;
   if (scheduleId) {
     courseInfo = await db.query(
@@ -143,7 +144,6 @@ const enrollCourse = async (studentId, courseId, semester, scheduleId) => {
 
   const newCourse = courseInfo.rows[0];
 
-  // Time conflict check — เฉพาะวิชาที่มีตารางเรียน
   if (newCourse.day_of_week && newCourse.start_time && newCourse.end_time) {
     const conflicts = await db.query(
       `SELECT c.course_code, c.title, cs.day_of_week, cs.start_time, cs.end_time
@@ -157,7 +157,6 @@ const enrollCourse = async (studentId, courseId, semester, scheduleId) => {
          AND cs.end_time   > $3`,
       [studentId, newCourse.day_of_week, newCourse.start_time, newCourse.end_time]
     );
-
     if (conflicts.rows.length > 0) {
       const c = conflicts.rows[0];
       throw {
@@ -253,32 +252,47 @@ const getMyGrades = async (studentId) => {
     ),
   ]);
   const gpaRow = gpa.rows[0];
-  return { grades: grades.rows, gpa: gpaRow.gpa ? parseFloat(gpaRow.gpa) : null, totalCredits: parseInt(gpaRow.total_credits) || 0 };
+  return {
+    grades: grades.rows,
+    gpa: gpaRow.gpa ? parseFloat(gpaRow.gpa) : null,
+    totalCredits: parseInt(gpaRow.total_credits) || 0,
+  };
 };
 
 // ─── LIBRARY ───────────────────────────────────────────────────
-const searchBooks = async ({ search = '', dept = '', available = false }) => {
-  let query = `
-    SELECT b.book_id, b.isbn, b.title, b.author, b.total_copies, b.available_copies,
-           d.name as department
-    FROM books b
-    LEFT JOIN departments d ON b.dept_id = d.dept_id
-    WHERE (b.title ILIKE $1 OR b.author ILIKE $1 OR b.isbn ILIKE $1)
-  `;
+// [FIX] ลบ LEFT JOIN departments ออก เพราะ books ไม่มี dept_id ใน schema เดิม
+//       (ตอนนี้ schema ใหม่มี dept_id แล้ว จึงสามารถ JOIN ได้)
+const searchBooks = async ({ search = '', dept = '', page = 1, limit = 20 }) => {
+  const offset = (page - 1) * limit;
   const params = [`%${search}%`];
+  let deptFilter = '';
+
   if (dept) {
     params.push(dept);
-    query += ` AND d.name = $${params.length}`;
+    deptFilter = `AND d.name = $${params.length}`;
   }
-  if (available) query += ' AND b.available_copies > 0';
-  query += ' ORDER BY b.title';
-  const result = await db.query(query, params);
+
+  params.push(limit, offset);
+
+  const result = await db.query(
+    `SELECT b.book_id, b.isbn, b.title, b.author,
+            b.total_copies, b.available_copies,
+            d.name as department
+     FROM books b
+     LEFT JOIN departments d ON b.dept_id = d.dept_id
+     WHERE (b.title ILIKE $1 OR b.author ILIKE $1 OR b.isbn ILIKE $1)
+       ${deptFilter}
+     ORDER BY b.title
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
   return result.rows;
 };
 
 const getMyBorrowedBooks = async (studentId) => {
   const result = await db.query(
-    `SELECT lr.record_id, lr.borrow_date, lr.due_date, lr.return_date, lr.fine_amount, lr.status,
+    `SELECT lr.record_id, lr.borrow_date, lr.due_date, lr.return_date,
+            lr.fine_amount, lr.status,
             b.title as book_title, b.author, b.isbn,
             CASE
               WHEN lr.return_date IS NULL AND CURRENT_DATE > lr.due_date
