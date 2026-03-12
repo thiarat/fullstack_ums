@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../../core/services/auth.service';
 
@@ -12,53 +12,88 @@ import { AuthService } from '../../../core/services/auth.service';
         <h1 class="page-title">{{ title }}</h1>
         <p class="page-subtitle" *ngIf="subtitle">{{ subtitle }}</p>
       </div>
+      
       <div class="topbar-right">
-        <div class="user-chip">
-          <div class="chip-avatar">{{ initials }}</div>
-          <span class="chip-name d-none d-md-block">{{ auth.user()?.first_name }}</span>
+        <div class="user-chip" *ngIf="auth.user() as user; else loading">
+          <div class="chip-avatar">{{ initials() }}</div>
+          <div class="user-info d-none d-md-flex">
+            <span class="chip-name">{{ user.first_name }} {{ user.last_name }}</span>
+            <span class="chip-role" *ngIf="user.role">{{ user.role }}</span>
+          </div>
         </div>
+
+        <ng-template #loading>
+          <div class="user-chip loading-shimmer">
+            <div class="chip-avatar">?</div>
+            <span class="chip-name">กำลังโหลด...</span>
+          </div>
+        </ng-template>
       </div>
     </header>
   `,
   styles: [`
+    :host {
+      --topbar-height: 70px;
+      --sidebar-width: 260px; /* ปรับให้ตรงกับ Sidebar ของคุณ */
+    }
     .topbar {
       height: var(--topbar-height);
       background: white;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center;
+      border-bottom: 1px solid #edf2f7;
+      display: flex; 
+      align-items: center;
       padding: 0 2rem;
       position: fixed;
-      top: 0; left: var(--sidebar-width); right: 0;
+      top: 0; 
+      left: var(--sidebar-width); 
+      right: 0;
       z-index: 99;
-      box-shadow: var(--shadow-sm);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .topbar-left { flex: 1; }
-    .page-title { font-size: 1.1rem; font-weight: 700; margin: 0; }
-    .page-subtitle { font-size: .78rem; color: var(--text-muted); margin: 0; }
+    .page-title { font-size: 1.1rem; font-weight: 700; margin: 0; color: #1a202c; }
+    .page-subtitle { font-size: .78rem; color: #718096; margin: 0; }
     .topbar-right { display: flex; align-items: center; gap: 1rem; }
+    
     .user-chip {
-      display: flex; align-items: center; gap: .625rem;
-      background: var(--bg-body); border-radius: 20px;
-      padding: .35rem .875rem .35rem .35rem;
-      cursor: pointer;
+      display: flex; 
+      align-items: center; 
+      gap: .75rem;
+      background: #f7fafc; 
+      border-radius: 50px;
+      padding: .4rem 1rem .4rem .4rem;
+      border: 1px solid #e2e8f0;
+      transition: all 0.2s;
     }
+    .user-chip:hover { background: #edf2f7; }
+    
+    .user-info { display: flex; flex-direction: column; line-height: 1.2; }
+    
     .chip-avatar {
-      width: 30px; height: 30px; border-radius: 50%;
+      width: 35px; height: 35px; border-radius: 50%;
       background: linear-gradient(135deg, #3b82f6, #8b5cf6);
       display: flex; align-items: center; justify-content: center;
-      color: white; font-weight: 700; font-size: .72rem;
+      color: white; font-weight: 700; font-size: .8rem;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
     }
-    .chip-name { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
+    .chip-name { font-size: .85rem; font-weight: 600; color: #2d3748; }
+    .chip-role { font-size: .65rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .loading-shimmer { opacity: 0.6; cursor: wait; }
   `]
 })
 export class TopbarComponent {
-  @Input() title = '';
+  @Input() title = 'Dashboard';
   @Input() subtitle = '';
 
-  get initials(): string {
+  // ใช้ computed signal เพื่อความแรงและประหยัดทรัพยากร
+  initials = computed(() => {
     const u = this.auth.user();
-    return `${u?.first_name?.[0] ?? ''}${u?.last_name?.[0] ?? ''}`.toUpperCase();
-  }
+    if (!u) return '?';
+    const first = u.first_name?.[0] || '';
+    const last = u.last_name?.[0] || '';
+    return (first + last).toUpperCase() || 'U';
+  });
 
   constructor(public auth: AuthService) {}
 }
