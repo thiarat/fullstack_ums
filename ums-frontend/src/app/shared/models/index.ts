@@ -80,6 +80,7 @@ export interface Course {
   department?: string;
   dept_id?: number;
   enrolled_students?: number;
+  professor_count?: number;
   professor_name?: string;
 }
 
