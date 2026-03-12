@@ -282,6 +282,55 @@ const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = n
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
+// NEW: get professor schedule for admin popup
+const getProfSchedule = async (profId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            c.course_code, c.title as course_title, c.credits,
+            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+     FROM class_schedules cs
+     JOIN courses c ON cs.course_id = c.course_id
+     LEFT JOIN enrollments e ON c.course_id = e.course_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     WHERE cs.prof_id = $1
+     GROUP BY cs.schedule_id, c.course_id
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2
+         WHEN 'Wednesday' THEN 3 WHEN 'Thursday'  THEN 4
+         WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+         WHEN 'Sunday'    THEN 7
+       END, cs.start_time`,
+    [profId]
+  );
+  return result.rows;
+};
+
+// NEW: get course schedule for admin popup (who teaches + enrollment)
+const getCourseSchedule = async (courseId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            p.first_name || ' ' || p.last_name as professor_name,
+            p.prof_id,
+            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+     FROM class_schedules cs
+     LEFT JOIN professors p ON cs.prof_id = p.prof_id
+     LEFT JOIN enrollments e ON cs.course_id = e.course_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     WHERE cs.course_id = $1
+     GROUP BY cs.schedule_id, p.prof_id
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2
+         WHEN 'Wednesday' THEN 3 WHEN 'Thursday'  THEN 4
+         WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+         WHEN 'Sunday'    THEN 7
+       END, cs.start_time`,
+    [courseId]
+  );
+  return result.rows;
+};
+
 // ─── DEPARTMENTS ───────────────────────────────────────────────
 const getAllDepartments = async () => {
   const result = await db.query(
@@ -388,8 +437,8 @@ module.exports = {
   getAllStudents, getStudentById, getStudentSchedule, updateStudentStatus,
   createUser, updateUser, deleteUser,
   adminResetPassword, getPasswordResetRequests, approvePasswordReset, rejectPasswordReset,
-  getAllProfessors,
+  getAllProfessors, getProfSchedule,
   getAllDepartments, createDepartment, updateDepartment, deleteDepartment,
-  getAllCourses, createCourse, updateCourse, deleteCourse,
+  getAllCourses, createCourse, updateCourse, deleteCourse, getCourseSchedule,
   getSystemLogs,
 };

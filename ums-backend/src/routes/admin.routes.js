@@ -26,7 +26,11 @@ router.post('/password-reset-requests/:requestId/approve', adminCtrl.approvePass
 router.post('/password-reset-requests/:requestId/reject',  adminCtrl.rejectPasswordReset);
 
 // Professors
-router.get('/professors', adminCtrl.getProfessors);
+router.get('/professors',                            adminCtrl.getProfessors);
+router.get('/professors/:id/schedule',               adminCtrl.getProfSchedule);   // popup ตารางสอน
+
+// Course schedule popup
+router.get('/courses/:id/schedule',                  adminCtrl.getCourseSchedule);
 
 // Departments
 router.get('/departments',       adminCtrl.getDepartments);

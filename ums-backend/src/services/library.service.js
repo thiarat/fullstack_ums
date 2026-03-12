@@ -18,25 +18,27 @@ const getAllBooks = async ({ search = '', page = 1, limit = 20 }) => {
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
-const createBook = async ({ isbn, title, author, total_copies = 1 }) => {
+const createBook = async ({ isbn, title, author, total_copies = 1, description = null, chapters = null }) => {
   const result = await db.query(
-    `INSERT INTO books (isbn, title, author, total_copies, available_copies)
-     VALUES ($1, $2, $3, $4, $4) RETURNING *`,
-    [isbn, title, author, total_copies]
+    `INSERT INTO books (isbn, title, author, total_copies, available_copies, description, chapters)
+     VALUES ($1, $2, $3, $4, $4, $5, $6) RETURNING *`,
+    [isbn, title, author, total_copies, description, chapters ? JSON.stringify(chapters) : null]
   );
   return result.rows[0];
 };
 
 const updateBook = async (bookId, body) => {
-  const { isbn, title, author, total_copies } = body;
+  const { isbn, title, author, total_copies, description, chapters } = body;
   const result = await db.query(
     `UPDATE books SET
        isbn          = COALESCE($1, isbn),
        title         = COALESCE($2, title),
        author        = COALESCE($3, author),
-       total_copies  = COALESCE($4, total_copies)
-     WHERE book_id = $5 RETURNING *`,
-    [isbn, title, author, total_copies, bookId]
+       total_copies  = COALESCE($4, total_copies),
+       description   = COALESCE($5, description),
+       chapters      = COALESCE($6, chapters)
+     WHERE book_id = $7 RETURNING *`,
+    [isbn, title, author, total_copies, description ?? null, chapters ? JSON.stringify(chapters) : null, bookId]
   );
   if (result.rows.length === 0) throw { statusCode: 404, message: 'Book not found.' };
   return result.rows[0];
@@ -137,9 +139,19 @@ const returnBook = async (recordId) => {
 // ─── ALL RECORDS (Admin) ───────────────────────────────────────
 const getAllBorrowRecords = async ({ status = null, page = 1, limit = 30 }) => {
   const offset = (page - 1) * limit;
-  let statusFilter = '';
-  const params = [limit, offset];
-  if (status) { params.push(status); statusFilter = `WHERE lr.status = $${params.length}`; }
+
+  // Build separate param arrays for data query and count query
+  const dataParams = [limit, offset];
+  const countParams = [];
+  let dataFilter = '';
+  let countFilter = '';
+
+  if (status) {
+    dataParams.push(status);
+    dataFilter = `WHERE lr.status = $${dataParams.length}`;
+    countParams.push(status);
+    countFilter = `WHERE lr.status = $1`;
+  }
 
   const [data, count] = await Promise.all([
     db.query(
@@ -157,14 +169,14 @@ const getAllBorrowRecords = async ({ status = null, page = 1, limit = 30 }) => {
        JOIN students s ON lr.student_id = s.student_id
        JOIN users u ON s.user_id = u.user_id
        JOIN books b ON lr.book_id = b.book_id
-       ${statusFilter}
+       ${dataFilter}
        ORDER BY lr.borrow_date DESC
        LIMIT $1 OFFSET $2`,
-      params
+      dataParams
     ),
     db.query(
-      `SELECT COUNT(*) FROM library_records lr ${statusFilter}`,
-      status ? [status] : []
+      `SELECT COUNT(*) FROM library_records lr ${countFilter}`,
+      countParams
     ),
   ]);
 

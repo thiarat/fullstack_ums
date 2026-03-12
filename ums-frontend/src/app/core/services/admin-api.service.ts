@@ -52,6 +52,7 @@ export class AdminApiService extends ApiService {
   deleteDepartment(id: number) { return this.delete<any>(`/admin/departments/${id}`); }
 
   // Courses — รับทั้ง positional args และ params object
+  getCourseSchedule(courseId: number) { return this.get<any>(`/admin/courses/${courseId}/schedule`); }
   getCourses(pageOrParams: any = 1, limit = 20, search = '', dept_id?: number) {
     const params = typeof pageOrParams === 'object'
       ? pageOrParams

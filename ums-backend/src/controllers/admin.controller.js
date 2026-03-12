@@ -73,7 +73,8 @@ exports.rejectPasswordReset = wrap(async (req) => {
 });
 
 // Professors
-exports.getProfessors = wrap(async (req) => adminService.getAllProfessors(req.query));
+exports.getProfessors    = wrap(async (req) => adminService.getAllProfessors(req.query));
+exports.getProfSchedule  = wrap(async (req) => adminService.getProfSchedule(+req.params.id));
 
 // Departments
 exports.getDepartments    = wrap(async (req) => adminService.getAllDepartments());
@@ -94,7 +95,8 @@ exports.deleteDepartment  = wrap(async (req) => {
 });
 
 // Courses
-exports.getCourses    = wrap(async (req) => adminService.getAllCourses(req.query));
+exports.getCourses        = wrap(async (req) => adminService.getAllCourses(req.query));
+exports.getCourseSchedule = wrap(async (req) => adminService.getCourseSchedule(+req.params.id));
 exports.createCourse  = wrap(async (req) => {
   const r = await adminService.createCourse(req.body);
   await logAction(req.user.user_id, `CREATE course: ${req.body.course_code}`, 'courses', r.course_id);
