@@ -51,6 +51,10 @@ export class AdminApiService extends ApiService {
   updateDepartment(id: number, body: any) { return this.put<any>(`/admin/departments/${id}`, body); }
   deleteDepartment(id: number) { return this.delete<any>(`/admin/departments/${id}`); }
 
+  // Courses-Profs (รายวิชา-อาจารย์)
+  getCourseProfList(params: any = {}) { return this.get<any>('/admin/courses-profs', params); }
+  getCourseProfStudents(scheduleId: number) { return this.get<any>(`/admin/courses-profs/${scheduleId}/students`); }
+
   // Courses — รับทั้ง positional args และ params object
   getCourseSchedule(courseId: number) { return this.get<any>(`/admin/courses/${courseId}/schedule`); }
   getCourses(pageOrParams: any = 1, limit = 20, search = '', dept_id?: number) {

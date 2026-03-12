@@ -18,7 +18,7 @@ const getProfessorDashboard = async (profId) => {
     ),
     db.query(
       `SELECT COUNT(*) FROM enrollments e
-       JOIN class_schedules cs ON e.course_id = cs.course_id
+       JOIN class_schedules cs ON e.schedule_id = cs.schedule_id
        WHERE cs.prof_id = $1 AND e.grade IS NULL`,
       [profId]
     ),
@@ -57,7 +57,8 @@ const getMyCourses = async (profId) => {
      FROM class_schedules cs
      JOIN courses c ON cs.course_id = c.course_id
      LEFT JOIN departments d ON c.dept_id = d.dept_id
-     LEFT JOIN enrollments e ON c.course_id = e.course_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      WHERE cs.prof_id = $1
      GROUP BY c.course_id, d.name, cs.schedule_id
      ORDER BY cs.day_of_week, cs.start_time`,
@@ -67,23 +68,25 @@ const getMyCourses = async (profId) => {
 };
 
 const getCourseStudents = async (profId, courseId) => {
-  // Verify prof owns this course schedule
-  const owns = await db.query(
+  // Find all schedules this prof teaches for this course
+  const schedules = await db.query(
     'SELECT schedule_id FROM class_schedules WHERE prof_id = $1 AND course_id = $2',
     [profId, courseId]
   );
-  if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
+  if (schedules.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
+
+  const scheduleIds = schedules.rows.map(r => r.schedule_id);
 
   const result = await db.query(
-    `SELECT e.enrollment_id, e.grade, e.semester,
+    `SELECT e.enrollment_id, e.grade, e.semester, e.schedule_id,
             s.student_id, s.first_name, s.last_name, s.profile_image,
             u.username as student_code, u.email
      FROM enrollments e
      JOIN students s ON e.student_id = s.student_id
      JOIN users u ON s.user_id = u.user_id
-     WHERE e.course_id = $1
+     WHERE e.schedule_id = ANY($1::int[])
      ORDER BY s.last_name, s.first_name`,
-    [courseId]
+    [scheduleIds]
   );
   return result.rows;
 };
@@ -95,10 +98,10 @@ const submitGrade = async (profId, enrollmentId, grade) => {
     throw { statusCode: 400, message: `Invalid grade. Must be one of: ${validGrades.join(', ')}` };
   }
 
-  // Verify prof teaches this enrollment's course
+  // Verify prof teaches this enrollment's specific schedule
   const check = await db.query(
     `SELECT e.enrollment_id FROM enrollments e
-     JOIN class_schedules cs ON e.course_id = cs.course_id
+     JOIN class_schedules cs ON e.schedule_id = cs.schedule_id
      WHERE e.enrollment_id = $1 AND cs.prof_id = $2`,
     [enrollmentId, profId]
   );
@@ -114,13 +117,14 @@ const submitGrade = async (profId, enrollmentId, grade) => {
 };
 
 const submitBulkGrades = async (profId, courseId, grades) => {
-  // grades = [{ enrollment_id, grade }]
+  // Get schedule_ids this prof teaches for this course
   const owns = await db.query(
     'SELECT schedule_id FROM class_schedules WHERE prof_id = $1 AND course_id = $2',
     [profId, courseId]
   );
   if (owns.rows.length === 0) throw { statusCode: 403, message: 'You do not teach this course.' };
 
+  const scheduleIds = owns.rows.map(r => r.schedule_id);
   const validGrades = ['A', 'B+', 'B', 'C+', 'C', 'D+', 'D', 'F', 'W', 'I'];
   const client = await db.getClient();
 
@@ -131,9 +135,10 @@ const submitBulkGrades = async (profId, courseId, grades) => {
       if (!validGrades.includes(grade)) {
         throw { statusCode: 400, message: `Invalid grade "${grade}" for enrollment_id ${enrollment_id}` };
       }
+      // Only update enrollments belonging to this prof's schedules
       const r = await client.query(
-        'UPDATE enrollments SET grade = $1 WHERE enrollment_id = $2 AND course_id = $3 RETURNING *',
-        [grade, enrollment_id, courseId]
+        'UPDATE enrollments SET grade = $1 WHERE enrollment_id = $2 AND schedule_id = ANY($3::int[]) RETURNING *',
+        [grade, enrollment_id, scheduleIds]
       );
       if (r.rows.length > 0) results.push(r.rows[0]);
     }
@@ -155,7 +160,8 @@ const getMySchedule = async (profId) => {
             COUNT(e.enrollment_id) as enrolled_students
      FROM class_schedules cs
      JOIN courses c ON cs.course_id = c.course_id
-     LEFT JOIN enrollments e ON c.course_id = e.course_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      WHERE cs.prof_id = $1
      GROUP BY cs.schedule_id, c.course_id
      ORDER BY CASE cs.day_of_week
@@ -169,7 +175,6 @@ const getMySchedule = async (profId) => {
 };
 
 const createSchedule = async (profId, { course_id, day_of_week, start_time, end_time, room_number }) => {
-  // Check for time conflict in same room
   const conflict = await db.query(
     `SELECT schedule_id FROM class_schedules
      WHERE room_number = $1 AND day_of_week = $2
@@ -179,7 +184,6 @@ const createSchedule = async (profId, { course_id, day_of_week, start_time, end_
   if (conflict.rows.length > 0) {
     throw { statusCode: 409, message: 'Room conflict: another class is scheduled in this room at that time.' };
   }
-
   const result = await db.query(
     `INSERT INTO class_schedules (course_id, prof_id, day_of_week, start_time, end_time, room_number)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -227,16 +231,12 @@ const createExamSchedule = async (profId, { course_id, exam_type, exam_date, sta
   return result.rows[0];
 };
 
-// replaced below
-
-
-// ─── SCHEDULE MANAGEMENT (NEW) ─────────────────────────────────
+// ─── SCHEDULE MANAGEMENT ───────────────────────────────────────
 const addCourseSchedule = async (profId, { course_id, day_of_week, start_time, end_time, room_number }) => {
-  // ตรวจว่าเป็นวิชาที่ prof สอนอยู่แล้ว หรือ course อยู่ใน dept ของ prof
   const courseCheck = await db.query('SELECT course_id FROM courses WHERE course_id = $1', [course_id]);
   if (courseCheck.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบรายวิชา' };
 
-  // เช็คเวลาทับของ prof เอง
+  // ตรวจเวลาทับของ prof เอง
   const conflict = await db.query(
     `SELECT c.course_code, c.title, cs.start_time, cs.end_time
      FROM class_schedules cs
@@ -250,6 +250,19 @@ const addCourseSchedule = async (profId, { course_id, day_of_week, start_time, e
     throw { statusCode: 409, message: `เวลาทับกับ ${c.course_code} ${c.title} (${c.start_time}–${c.end_time})` };
   }
 
+  // ตรวจเวลาทับในห้องเดียวกัน
+  if (room_number) {
+    const roomConflict = await db.query(
+      `SELECT cs.schedule_id FROM class_schedules cs
+       WHERE cs.room_number = $1 AND cs.day_of_week = $2
+         AND cs.start_time < $4 AND cs.end_time > $3`,
+      [room_number, day_of_week, start_time, end_time]
+    );
+    if (roomConflict.rows.length > 0) {
+      throw { statusCode: 409, message: `ห้อง ${room_number} ถูกใช้งานอยู่ในช่วงเวลานี้แล้ว` };
+    }
+  }
+
   const result = await db.query(
     `INSERT INTO class_schedules (course_id, prof_id, day_of_week, start_time, end_time, room_number)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -259,12 +272,28 @@ const addCourseSchedule = async (profId, { course_id, day_of_week, start_time, e
 };
 
 const updateCourseSchedule = async (profId, scheduleId, { day_of_week, start_time, end_time, room_number }) => {
-  // ตรวจว่า schedule นี้เป็นของ prof คนนี้
   const owns = await db.query(
     'SELECT schedule_id FROM class_schedules WHERE schedule_id = $1 AND prof_id = $2',
     [scheduleId, profId]
   );
   if (owns.rows.length === 0) throw { statusCode: 403, message: 'ไม่มีสิทธิ์แก้ไขตารางสอนนี้' };
+
+  // ตรวจเวลาทับ (ยกเว้น schedule นี้)
+  if (day_of_week && start_time && end_time) {
+    const conflict = await db.query(
+      `SELECT c.course_code, c.title, cs.start_time, cs.end_time
+       FROM class_schedules cs
+       JOIN courses c ON cs.course_id = c.course_id
+       WHERE cs.prof_id = $1 AND cs.day_of_week = $2
+         AND cs.schedule_id != $5
+         AND cs.start_time < $4 AND cs.end_time > $3`,
+      [profId, day_of_week, start_time, end_time, scheduleId]
+    );
+    if (conflict.rows.length > 0) {
+      const c = conflict.rows[0];
+      throw { statusCode: 409, message: `เวลาทับกับ ${c.course_code} ${c.title} (${c.start_time}–${c.end_time})` };
+    }
+  }
 
   const result = await db.query(
     `UPDATE class_schedules SET
@@ -288,7 +317,6 @@ const deleteCourseSchedule = async (profId, scheduleId) => {
 };
 
 const getDeptCourses = async (profId) => {
-  // ดึงวิชาทั้งหมดในแผนกเดียวกับอาจารย์ (สำหรับเลือกเพิ่มตารางสอน)
   const result = await db.query(
     `SELECT c.course_id, c.course_code, c.title, c.credits,
             d.name as department

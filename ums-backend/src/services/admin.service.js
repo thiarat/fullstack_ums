@@ -64,15 +64,15 @@ const getStudentById = async (studentId) => {
   return result.rows[0];
 };
 
-// NEW: get student schedule for admin popup
+// get student schedule for admin popup — join via schedule_id
 const getStudentSchedule = async (studentId) => {
   const result = await db.query(
     `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
             c.course_code, c.title as course_title, c.credits,
             p.first_name || ' ' || p.last_name as professor_name
      FROM enrollments e
-     JOIN courses c ON e.course_id = c.course_id
-     JOIN class_schedules cs ON c.course_id = cs.course_id
+     JOIN class_schedules cs ON e.schedule_id = cs.schedule_id
+     JOIN courses c ON cs.course_id = c.course_id
      LEFT JOIN professors p ON cs.prof_id = p.prof_id
      WHERE e.student_id = $1 AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      ORDER BY
@@ -94,28 +94,23 @@ const updateStudentStatus = async (studentId, isActive) => {
   return { student_id: studentId, is_active: isActive };
 };
 
-// NEW: create user (student or professor)
+// create user (student or professor)
 const createUser = async ({ username, password, email, role_name, first_name, last_name, dept_id }) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-
-    // check duplicate
     const existing = await client.query(
       'SELECT user_id FROM users WHERE username = $1 OR email = $2', [username, email]
     );
     if (existing.rows.length > 0) throw { statusCode: 409, message: 'Username หรือ Email ซ้ำในระบบ' };
-
     const role = await client.query('SELECT role_id FROM roles WHERE role_name = $1', [role_name]);
     if (role.rows.length === 0) throw { statusCode: 400, message: 'Role ไม่ถูกต้อง' };
-
     const hash = await bcrypt.hash(password, 10);
     const userResult = await client.query(
       'INSERT INTO users (username, password_secure, email, role_id) VALUES ($1, $2, $3, $4) RETURNING *',
       [username, hash, email, role.rows[0].role_id]
     );
     const user = userResult.rows[0];
-
     if (role_name === 'Student') {
       await client.query(
         'INSERT INTO students (user_id, first_name, last_name) VALUES ($1, $2, $3)',
@@ -127,7 +122,6 @@ const createUser = async ({ username, password, email, role_name, first_name, la
         [user.user_id, first_name, last_name, dept_id || null]
       );
     }
-
     await client.query('COMMIT');
     return { user_id: user.user_id, username, email, role_name, first_name, last_name };
   } catch (err) {
@@ -138,13 +132,10 @@ const createUser = async ({ username, password, email, role_name, first_name, la
   }
 };
 
-// NEW: update user info
 const updateUser = async (userId, { first_name, last_name, email, dept_id }) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-
-    // get role
     const roleRes = await client.query(
       `SELECT r.role_name, s.student_id, p.prof_id
        FROM users u
@@ -155,9 +146,7 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
     );
     if (roleRes.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
     const { role_name, student_id, prof_id } = roleRes.rows[0];
-
     if (email) await client.query('UPDATE users SET email = $1 WHERE user_id = $2', [email, userId]);
-
     if (role_name === 'Student' && student_id) {
       await client.query(
         'UPDATE students SET first_name = COALESCE($1,first_name), last_name = COALESCE($2,last_name) WHERE student_id = $3',
@@ -173,7 +162,6 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
         [first_name, last_name, dept_id, prof_id]
       );
     }
-
     await client.query('COMMIT');
     return { user_id: userId, updated: true };
   } catch (err) {
@@ -184,7 +172,6 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
   }
 };
 
-// NEW: delete user
 const deleteUser = async (userId) => {
   const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
   if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
@@ -192,7 +179,6 @@ const deleteUser = async (userId) => {
   return { deleted: true };
 };
 
-// NEW: admin reset password for a user
 const adminResetPassword = async (userId, newPassword) => {
   const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
   if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
@@ -201,7 +187,6 @@ const adminResetPassword = async (userId, newPassword) => {
   return { user_id: userId, reset: true };
 };
 
-// NEW: password reset requests
 const getPasswordResetRequests = async () => {
   const result = await db.query(
     `SELECT pr.request_id, pr.user_id, pr.status, pr.created_at,
@@ -225,7 +210,6 @@ const approvePasswordReset = async (requestId, newPassword, adminUserId) => {
     [requestId]
   );
   if (req.rows.length === 0) throw { statusCode: 404, message: 'Request not found or already processed.' };
-
   const hash = await bcrypt.hash(newPassword, 10);
   const client = await db.getClient();
   try {
@@ -282,7 +266,7 @@ const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = n
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
-// NEW: get professor schedule for admin popup
+// get professor schedule for admin popup — use schedule_id join for enrollment count
 const getProfSchedule = async (profId) => {
   const result = await db.query(
     `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
@@ -290,7 +274,7 @@ const getProfSchedule = async (profId) => {
             COUNT(DISTINCT e.enrollment_id) as enrolled_students
      FROM class_schedules cs
      JOIN courses c ON cs.course_id = c.course_id
-     LEFT JOIN enrollments e ON c.course_id = e.course_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
        AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      WHERE cs.prof_id = $1
      GROUP BY cs.schedule_id, c.course_id
@@ -306,7 +290,7 @@ const getProfSchedule = async (profId) => {
   return result.rows;
 };
 
-// NEW: get course schedule for admin popup (who teaches + enrollment)
+// get course schedule for admin popup — use schedule_id join
 const getCourseSchedule = async (courseId) => {
   const result = await db.query(
     `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
@@ -315,7 +299,7 @@ const getCourseSchedule = async (courseId) => {
             COUNT(DISTINCT e.enrollment_id) as enrolled_students
      FROM class_schedules cs
      LEFT JOIN professors p ON cs.prof_id = p.prof_id
-     LEFT JOIN enrollments e ON cs.course_id = e.course_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
        AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      WHERE cs.course_id = $1
      GROUP BY cs.schedule_id, p.prof_id
@@ -376,10 +360,10 @@ const getAllCourses = async ({ page = 1, limit = 20, search = '', dept_id = null
   const result = await db.query(
     `SELECT c.course_id, c.course_code, c.title, c.credits,
             d.name as department,
-            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+            COUNT(DISTINCT cs.prof_id) as professor_count
      FROM courses c
      LEFT JOIN departments d ON c.dept_id = d.dept_id
-     LEFT JOIN enrollments e ON c.course_id = e.course_id
+     LEFT JOIN class_schedules cs ON c.course_id = cs.course_id
      WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1) ${deptFilter}
      GROUP BY c.course_id, d.name
      ORDER BY c.course_code LIMIT $2 OFFSET $3`,
@@ -415,6 +399,53 @@ const deleteCourse = async (courseId) => {
   return result.rows[0];
 };
 
+// ─── COURSES-PROFS LIST (รายวิชา-อาจารย์) ─────────────────────
+// Returns one row per (course × professor schedule) with enrolled student count
+const getCourseProfList = async ({ search = '', dept_id = null } = {}) => {
+  const params = [`%${search}%`];
+  let deptFilter = '';
+  if (dept_id) { params.push(dept_id); deptFilter = `AND c.dept_id = $${params.length}`; }
+
+  const result = await db.query(
+    `SELECT cs.schedule_id,
+            c.course_id, c.course_code, c.title, c.credits,
+            d.name as department,
+            p.prof_id,
+            p.first_name || ' ' || p.last_name as professor_name,
+            cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+     FROM class_schedules cs
+     JOIN courses c ON cs.course_id = c.course_id
+     LEFT JOIN departments d ON c.dept_id = d.dept_id
+     LEFT JOIN professors p ON cs.prof_id = p.prof_id
+     LEFT JOIN enrollments e ON e.schedule_id = cs.schedule_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1
+            OR p.first_name ILIKE $1 OR p.last_name ILIKE $1) ${deptFilter}
+     GROUP BY cs.schedule_id, c.course_id, d.dept_id, p.prof_id
+     ORDER BY c.course_code, p.last_name`,
+    params
+  );
+  return result.rows;
+};
+
+// Returns students enrolled in a specific schedule (for popup)
+const getCourseProfStudents = async (scheduleId) => {
+  const result = await db.query(
+    `SELECT e.enrollment_id, e.grade, e.semester,
+            s.student_id, s.first_name, s.last_name,
+            u.email, u.username as student_code
+     FROM enrollments e
+     JOIN students s ON e.student_id = s.student_id
+     JOIN users u ON s.user_id = u.user_id
+     WHERE e.schedule_id = $1
+       AND (e.grade IS NULL OR e.grade NOT IN ('W'))
+     ORDER BY s.last_name, s.first_name`,
+    [scheduleId]
+  );
+  return result.rows;
+};
+
 // ─── SYSTEM LOGS ───────────────────────────────────────────────
 const getSystemLogs = async ({ page = 1, limit = 50 }) => {
   const offset = (page - 1) * limit;
@@ -440,5 +471,6 @@ module.exports = {
   getAllProfessors, getProfSchedule,
   getAllDepartments, createDepartment, updateDepartment, deleteDepartment,
   getAllCourses, createCourse, updateCourse, deleteCourse, getCourseSchedule,
+  getCourseProfList, getCourseProfStudents,
   getSystemLogs,
 };

@@ -126,8 +126,9 @@ export class SidebarComponent {
       { label: 'นักศึกษา',    icon: 'bi-people-fill',     path: '/admin/students' },
       { label: 'อาจารย์',     icon: 'bi-person-badge',    path: '/admin/professors' },
       { label: 'แผนก',        icon: 'bi-building',         path: '/admin/departments' },
-      { label: 'รายวิชา',    icon: 'bi-book',              path: '/admin/courses' },
-      { label: 'ห้องสมุด',   icon: 'bi-journal-bookmark',  path: '/admin/library' },
+      { label: 'รายวิชา',          icon: 'bi-book',              path: '/admin/courses' },
+      { label: 'รายวิชา - อาจารย์', icon: 'bi-person-video2',    path: '/admin/courses-profs' },
+      { label: 'ห้องสมุด',         icon: 'bi-journal-bookmark',  path: '/admin/library' },
       { label: 'System Logs', icon: 'bi-clipboard-data',   path: '/admin/logs' },
     ];
     if (role === 'Professor') return [

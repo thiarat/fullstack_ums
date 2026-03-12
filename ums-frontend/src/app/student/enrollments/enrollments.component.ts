@@ -5,6 +5,11 @@ import { SidebarComponent } from '../../shared/components/sidebar/sidebar.compon
 import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 import { StudentApiService } from '../../core/services/student-api.service';
 
+const DAY_TH: Record<string,string> = {
+  Monday:'จันทร์', Tuesday:'อังคาร', Wednesday:'พุธ',
+  Thursday:'พฤหัส', Friday:'ศุกร์', Saturday:'เสาร์', Sunday:'อาทิตย์'
+};
+
 @Component({
   selector: 'app-student-enrollments',
   standalone: true,
@@ -26,19 +31,29 @@ import { StudentApiService } from '../../core/services/student-api.service';
 
           <!-- My Enrollments -->
           <div *ngIf="tab() === 'my'">
-            <div class="card">
+            <!-- Active enrollments -->
+            <h6 class="fw-700 mb-2 text-dark">
+              <i class="bi bi-journal-check me-1 text-success"></i>วิชาที่เรียน
+              <span class="badge bg-success ms-2">{{ activeEnrollments().length }}</span>
+            </h6>
+            <div class="card mb-4">
               <div class="table-responsive">
                 <table class="table">
-                  <thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th><th>แผนก</th><th>อาจารย์</th><th>วัน/เวลา</th><th>เกรด</th><th></th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th>
+                      <th>แผนก</th><th>อาจารย์</th><th>วัน/เวลา</th><th>เกรด</th><th></th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    <tr *ngFor="let e of enrollments()" class="stagger-item">
+                    <tr *ngFor="let e of activeEnrollments()" class="stagger-item">
                       <td><code>{{ e.course_code }}</code></td>
                       <td><strong>{{ e.title }}</strong></td>
                       <td>{{ e.credits }}</td>
                       <td>{{ e.department }}</td>
                       <td class="text-muted" style="font-size:.82rem">{{ e.professor_name || '-' }}</td>
                       <td class="text-muted" style="font-size:.78rem">
-                        <span *ngIf="e.day_of_week">{{ e.day_of_week }} {{ e.start_time | slice:0:5 }}–{{ e.end_time | slice:0:5 }}</span>
+                        <span *ngIf="e.day_of_week">{{ dayTh(e.day_of_week) }} {{ e.start_time | slice:0:5 }}–{{ e.end_time | slice:0:5 }}</span>
                         <span *ngIf="!e.day_of_week">-</span>
                       </td>
                       <td>
@@ -53,15 +68,48 @@ import { StudentApiService } from '../../core/services/student-api.service';
                   </tbody>
                 </table>
               </div>
-              <div class="empty-state" *ngIf="!enrollments().length">
+              <div class="empty-state" *ngIf="!activeEnrollments().length">
                 <i class="bi bi-journal-x"></i><p>ยังไม่มีรายวิชา</p>
+              </div>
+            </div>
+
+            <!-- Withdrawn enrollments -->
+            <div *ngIf="withdrawnEnrollments().length > 0">
+              <h6 class="fw-700 mb-2 text-muted">
+                <i class="bi bi-journal-x me-1 text-danger"></i>วิชาที่ถอน
+                <span class="badge bg-secondary ms-2">{{ withdrawnEnrollments().length }}</span>
+              </h6>
+              <div class="card">
+                <div class="table-responsive">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th>
+                        <th>แผนก</th><th>อาจารย์</th><th>วัน/เวลา</th><th>เกรด</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let e of withdrawnEnrollments()" class="stagger-item withdrawn-row">
+                        <td><code>{{ e.course_code }}</code></td>
+                        <td class="text-muted">{{ e.title }}</td>
+                        <td>{{ e.credits }}</td>
+                        <td>{{ e.department }}</td>
+                        <td class="text-muted" style="font-size:.82rem">{{ e.professor_name || '-' }}</td>
+                        <td class="text-muted" style="font-size:.78rem">
+                          <span *ngIf="e.day_of_week">{{ dayTh(e.day_of_week) }} {{ e.start_time | slice:0:5 }}–{{ e.end_time | slice:0:5 }}</span>
+                          <span *ngIf="!e.day_of_week">-</span>
+                        </td>
+                        <td><span class="badge bg-secondary">W</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Available Courses -->
           <div *ngIf="tab() === 'available'">
-            <!-- semester + search + filter -->
             <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
               <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 text-nowrap">ภาคเรียน:</label>
@@ -78,13 +126,11 @@ import { StudentApiService } from '../../core/services/student-api.service';
               </select>
             </div>
 
-            <!-- conflict error -->
             <div class="alert alert-danger d-flex align-items-center gap-2" *ngIf="conflictError()">
               <i class="bi bi-exclamation-triangle-fill"></i>
               {{ conflictError() }}
             </div>
 
-            <!-- enrolled course_ids for marking -->
             <div class="row g-3">
               <div class="col-md-6 col-lg-4 stagger-item" *ngFor="let c of filtered()">
                 <div class="card h-100" [class.enrolled-card]="isEnrolled(c)">
@@ -101,7 +147,7 @@ import { StudentApiService } from '../../core/services/student-api.service';
                       <div><i class="bi bi-building me-1"></i>{{ c.department || '-' }}</div>
                       <div><i class="bi bi-person me-1"></i>{{ c.professor_name || 'ยังไม่มีอาจารย์' }}</div>
                       <div *ngIf="c.day_of_week" [class.text-danger]="hasTimeConflict(c)">
-                        <i class="bi bi-clock me-1"></i>{{ c.day_of_week }}
+                        <i class="bi bi-clock me-1"></i>{{ dayTh(c.day_of_week) }}
                         {{ c.start_time | slice:0:5 }}–{{ c.end_time | slice:0:5 }}
                         <i class="bi bi-exclamation-triangle-fill text-danger ms-1" *ngIf="hasTimeConflict(c)" title="เวลาทับกับวิชาที่ลงแล้ว"></i>
                       </div>
@@ -137,19 +183,26 @@ import { StudentApiService } from '../../core/services/student-api.service';
     .fw-700 { font-weight:700; }
     .empty-state { text-align:center; padding:60px; color:#94a3b8; }
     .empty-state i { font-size:2.5rem; display:block; margin-bottom:12px; }
+    .withdrawn-row td { opacity:.55; }
   `]
 })
 export class StudentEnrollmentsComponent implements OnInit {
   tab = signal<'my'|'available'>('my');
-  enrollments  = signal<any[]>([]);
-  available    = signal<any[]>([]);
-  filtered     = signal<any[]>([]);
-  depts        = signal<string[]>([]);
-  loadingAvail = signal(false);
-  semester     = '1/2568';
-  courseSearch = '';
-  deptFilter   = '';
-  conflictError = signal('');
+  allEnrollments   = signal<any[]>([]);
+  available        = signal<any[]>([]);
+  filtered         = signal<any[]>([]);
+  depts            = signal<string[]>([]);
+  loadingAvail     = signal(false);
+  semester         = '1/2568';
+  courseSearch     = '';
+  deptFilter       = '';
+  conflictError    = signal('');
+
+  dayTh = (d: string) => DAY_TH[d] || d;
+
+  // Split active vs withdrawn
+  activeEnrollments   = computed(() => this.allEnrollments().filter(e => e.grade !== 'W'));
+  withdrawnEnrollments = computed(() => this.allEnrollments().filter(e => e.grade === 'W'));
 
   constructor(private api: StudentApiService) {}
   ngOnInit() { this.loadMy(); }
@@ -161,7 +214,7 @@ export class StudentEnrollmentsComponent implements OnInit {
 
   loadMy() {
     this.api.getEnrollments().subscribe(r => {
-      if (r.data) this.enrollments.set(r.data as any[]);
+      if (r.data) this.allEnrollments.set(r.data as any[]);
     });
   }
 
@@ -170,7 +223,6 @@ export class StudentEnrollmentsComponent implements OnInit {
     this.api.getAvailableCourses().subscribe(r => {
       const data = (r.data as any) ?? [];
       this.available.set(data);
-      // สร้าง dept list
       const ds = [...new Set(data.map((c: any) => c.department).filter(Boolean))] as string[];
       this.depts.set(ds.sort());
       this.applyFilter();
@@ -192,25 +244,18 @@ export class StudentEnrollmentsComponent implements OnInit {
     this.filtered.set(result);
   }
 
+  // Check enrollment by schedule_id (each section is unique)
   isEnrolled(c: any): boolean {
-    // ตรวจว่า schedule_id นี้ลงแล้วหรือยัง (ป้องกันลง duplicate)
-    return this.enrollments().some(e => e.course_id === c.course_id && e.schedule_id === c.schedule_id);
+    return this.activeEnrollments().some(e => e.schedule_id === c.schedule_id);
   }
 
   hasTimeConflict(c: any): boolean {
     if (!c.day_of_week || !c.start_time || !c.end_time) return false;
-    const toMin = (t: string) => {
-      const [h, m] = t.split(':').map(Number);
-      return h * 60 + m;
-    };
-    const cStart = toMin(c.start_time);
-    const cEnd = toMin(c.end_time);
-    return this.enrollments().some(e => {
-      if (e.day_of_week !== c.day_of_week) return false;
-      if (!e.start_time || !e.end_time) return false;
-      const eStart = toMin(e.start_time);
-      const eEnd = toMin(e.end_time);
-      // overlap: ถ้าช่วงเวลาใดๆ ทับกัน
+    const toMin = (t: string) => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+    const cStart = toMin(c.start_time), cEnd = toMin(c.end_time);
+    return this.activeEnrollments().some(e => {
+      if (e.day_of_week !== c.day_of_week || !e.start_time || !e.end_time) return false;
+      const eStart = toMin(e.start_time), eEnd = toMin(e.end_time);
       return cStart < eEnd && cEnd > eStart;
     });
   }
@@ -218,8 +263,8 @@ export class StudentEnrollmentsComponent implements OnInit {
   enroll(c: any) {
     if (!this.semester || this.isEnrolled(c)) return;
     this.conflictError.set('');
-    // ส่ง schedule_id ด้วยเพื่อให้ backend enroll ถูกอัน
-    this.api.enrollCourse(c.course_id, this.semester).subscribe({
+    // Pass schedule_id to enroll in this specific section/professor
+    this.api.enrollCourse(c.course_id, this.semester, c.schedule_id).subscribe({
       next: () => { this.loadMy(); this.loadAvailable(); this.tab.set('my'); },
       error: (e: any) => {
         const msg = e?.error?.message || 'เกิดข้อผิดพลาด';
@@ -230,7 +275,7 @@ export class StudentEnrollmentsComponent implements OnInit {
   }
 
   withdraw(e: any) {
-    if (confirm(`ถอนวิชา ${e.course_code}?`))
+    if (confirm(`ถอนวิชา ${e.course_code} (${e.professor_name || '-'})?`))
       this.api.withdrawCourse(e.enrollment_id).subscribe(() => this.loadMy());
   }
 

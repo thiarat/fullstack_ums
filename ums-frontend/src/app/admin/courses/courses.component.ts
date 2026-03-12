@@ -40,7 +40,7 @@ const DAY_TH: Record<string,string> = {
             <div class="table-responsive" *ngIf="!loading()">
               <table class="table">
                 <thead>
-                  <tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th><th>แผนก</th><th>นักศึกษา</th><th></th></tr>
+                  <tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>หน่วยกิต</th><th>แผนก</th><th>อาจารย์</th><th></th></tr>
                 </thead>
                 <tbody>
                   <tr *ngFor="let c of courses()" class="stagger-item clickable-row" (click)="viewCourseSchedule(c)">
@@ -48,7 +48,7 @@ const DAY_TH: Record<string,string> = {
                     <td><strong>{{ c.title }}</strong></td>
                     <td><span class="badge bg-primary">{{ c.credits }} หน่วยกิต</span></td>
                     <td><span class="badge bg-light text-dark border">{{ c.department }}</span></td>
-                    <td>{{ c.enrolled_students ?? 0 }} คน</td>
+                    <td>{{ c.professor_count ?? 0 }} คน</td>
                     <td (click)="$event.stopPropagation()">
                       <div class="d-flex gap-1">
                         <button class="btn btn-icon btn-sm btn-outline-secondary" (click)="openModal(c)"><i class="bi bi-pencil"></i></button>

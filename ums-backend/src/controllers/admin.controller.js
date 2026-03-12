@@ -113,5 +113,9 @@ exports.deleteCourse  = wrap(async (req) => {
   return r;
 });
 
+// Courses-Profs (รายวิชา-อาจารย์)
+exports.getCourseProfList     = wrap(async (req) => adminService.getCourseProfList(req.query));
+exports.getCourseProfStudents = wrap(async (req) => adminService.getCourseProfStudents(+req.params.scheduleId));
+
 // Logs
 exports.getSystemLogs = wrap(async (req) => adminService.getSystemLogs(req.query));

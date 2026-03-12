@@ -44,6 +44,10 @@ router.post('/courses',      adminCtrl.createCourse);
 router.put('/courses/:id',   adminCtrl.updateCourse);
 router.delete('/courses/:id',adminCtrl.deleteCourse);
 
+// Courses-Profs list (รายวิชา-อาจารย์)
+router.get('/courses-profs',                              adminCtrl.getCourseProfList);
+router.get('/courses-profs/:scheduleId/students',         adminCtrl.getCourseProfStudents);
+
 // Logs
 router.get('/logs', adminCtrl.getSystemLogs);
 
