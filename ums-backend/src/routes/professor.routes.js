@@ -50,7 +50,7 @@ router.get('/courses/dept-all', profCtrl.getDeptCourses);
  *         required: true
  *         schema: { type: integer }
  */
-router.get('/courses/:courseId/students', profCtrl.getCourseStudents);
+router.get('/courses/:scheduleId/students', profCtrl.getCourseStudents);
 
 // ─── GRADE ENTRY ───────────────────────────────────────────────
 /**
@@ -112,7 +112,7 @@ router.patch('/grades/:enrollmentId', profCtrl.submitGrade);
  *       200:
  *         description: "Grades submitted (uses DB transaction)"
  */
-router.post('/courses/:courseId/grades', profCtrl.submitBulkGrades);
+router.post('/courses/:scheduleId/grades', profCtrl.submitBulkGrades);
 
 // ─── CLASS SCHEDULE ────────────────────────────────────────────
 /**
@@ -193,5 +193,8 @@ router.delete("/schedule/:scheduleId", profCtrl.deleteSchedule);
  */
 router.get('/exams', profCtrl.getExamSchedule);
 router.post('/exams', profCtrl.createExamSchedule);
+router.get('/exams/courses', profCtrl.getCourseExams);
+router.put('/exams/:examId', profCtrl.updateExamSchedule);
+router.delete('/exams/:examId', profCtrl.deleteExamSchedule);
 
 module.exports = router;

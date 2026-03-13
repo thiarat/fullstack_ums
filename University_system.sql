@@ -1,262 +1,144 @@
--- ============================================================
---  University Management System — Database Schema (Fixed)
---  แก้ไขจุดบกพร่องทั้งหมดจากการตรวจสอบ
--- ============================================================
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- 1. Departments, Roles, Users
-CREATE TABLE IF NOT EXISTS departments (
-    dept_id  SERIAL PRIMARY KEY,
-    name     VARCHAR(100) NOT NULL,
-    location VARCHAR(255)
+CREATE TABLE public.books (
+  book_id integer NOT NULL DEFAULT nextval('books_book_id_seq'::regclass),
+  isbn character varying NOT NULL UNIQUE,
+  title character varying NOT NULL,
+  author character varying,
+  total_copies integer DEFAULT 1 CHECK (total_copies >= 0),
+  available_copies integer DEFAULT 1 CHECK (available_copies >= 0),
+  dept_id integer,
+  description text,
+  chapters jsonb,
+  CONSTRAINT books_pkey PRIMARY KEY (book_id),
+  CONSTRAINT books_dept_id_fkey FOREIGN KEY (dept_id) REFERENCES public.departments(dept_id)
 );
-
-CREATE TABLE IF NOT EXISTS roles (
-    role_id   SERIAL PRIMARY KEY,
-    role_name VARCHAR(20) UNIQUE NOT NULL
+CREATE TABLE public.class_schedules (
+  schedule_id integer NOT NULL DEFAULT nextval('class_schedules_schedule_id_seq'::regclass),
+  course_id integer,
+  prof_id integer,
+  day_of_week character varying,
+  start_time time without time zone,
+  end_time time without time zone,
+  room_number character varying,
+  CONSTRAINT class_schedules_pkey PRIMARY KEY (schedule_id),
+  CONSTRAINT class_schedules_course_id_fkey FOREIGN KEY (course_id) REFERENCES public.courses(course_id),
+  CONSTRAINT class_schedules_prof_id_fkey FOREIGN KEY (prof_id) REFERENCES public.professors(prof_id)
 );
-
-CREATE TABLE IF NOT EXISTS users (
-    user_id         SERIAL PRIMARY KEY,
-    username        VARCHAR(50)  UNIQUE NOT NULL,
-    password_secure TEXT         NOT NULL,
-    email           VARCHAR(100) UNIQUE NOT NULL,
-    role_id         INT REFERENCES roles(role_id),
-    is_active       BOOLEAN   DEFAULT TRUE,
-    last_login      TIMESTAMP,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE public.courses (
+  course_id integer NOT NULL DEFAULT nextval('courses_course_id_seq'::regclass),
+  course_code character varying NOT NULL UNIQUE,
+  title character varying NOT NULL,
+  credits integer DEFAULT 3 CHECK (credits > 0),
+  dept_id integer,
+  CONSTRAINT courses_pkey PRIMARY KEY (course_id),
+  CONSTRAINT courses_dept_id_fkey FOREIGN KEY (dept_id) REFERENCES public.departments(dept_id)
 );
-
-INSERT INTO roles (role_name) VALUES ('Admin'), ('Student'), ('Professor')
-ON CONFLICT DO NOTHING;
-
--- 2. ข้อมูลบุคลากร (Professors, Students)
-CREATE TABLE IF NOT EXISTS professors (
-    prof_id       SERIAL PRIMARY KEY,
-    user_id       INT UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
-    first_name    VARCHAR(50)  NOT NULL,
-    last_name     VARCHAR(50)  NOT NULL,
-    profile_image VARCHAR(255) DEFAULT 'default_prof.png',
-    dept_id       INT REFERENCES departments(dept_id)
+CREATE TABLE public.departments (
+  dept_id integer NOT NULL DEFAULT nextval('departments_dept_id_seq'::regclass),
+  name character varying NOT NULL,
+  location character varying,
+  CONSTRAINT departments_pkey PRIMARY KEY (dept_id)
 );
-
-CREATE TABLE IF NOT EXISTS students (
-    student_id      SERIAL PRIMARY KEY,
-    user_id         INT UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
-    first_name      VARCHAR(50)  NOT NULL,
-    last_name       VARCHAR(50)  NOT NULL,
-    profile_image   VARCHAR(255) DEFAULT 'default_std.png',
-    enrollment_date DATE DEFAULT CURRENT_DATE
+CREATE TABLE public.enrollments (
+  enrollment_id integer NOT NULL DEFAULT nextval('enrollments_enrollment_id_seq'::regclass),
+  student_id integer,
+  course_id integer,
+  grade character varying CHECK (grade::text = ANY (ARRAY['A'::character varying, 'B+'::character varying, 'B'::character varying, 'C+'::character varying, 'C'::character varying, 'D+'::character varying, 'D'::character varying, 'F'::character varying, 'W'::character varying, 'I'::character varying]::text[])),
+  semester character varying,
+  schedule_id integer,
+  CONSTRAINT enrollments_pkey PRIMARY KEY (enrollment_id),
+  CONSTRAINT enrollments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(student_id),
+  CONSTRAINT enrollments_course_id_fkey FOREIGN KEY (course_id) REFERENCES public.courses(course_id),
+  CONSTRAINT enrollments_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES public.class_schedules(schedule_id)
 );
-
--- 3. ระบบจัดการหนังสือ (Books & Library)
-CREATE TABLE IF NOT EXISTS books (
-    book_id          SERIAL PRIMARY KEY,
-    isbn             VARCHAR(20)    UNIQUE NOT NULL,
-    title            VARCHAR(255)   NOT NULL,
-    author           VARCHAR(100),
-    total_copies     INT DEFAULT 1  CHECK (total_copies >= 0),
-    available_copies INT DEFAULT 1  CHECK (available_copies >= 0),
-    -- [FIX] available_copies ต้องไม่เกิน total_copies
-    CONSTRAINT chk_copies CHECK (available_copies <= total_copies)
+CREATE TABLE public.exam_schedules (
+  exam_id integer NOT NULL DEFAULT nextval('exam_schedules_exam_id_seq'::regclass),
+  course_id integer,
+  exam_type character varying DEFAULT 'Final'::character varying,
+  exam_date date NOT NULL,
+  start_time time without time zone NOT NULL,
+  end_time time without time zone NOT NULL,
+  room_number character varying,
+  CONSTRAINT exam_schedules_pkey PRIMARY KEY (exam_id),
+  CONSTRAINT exam_schedules_course_id_fkey FOREIGN KEY (course_id) REFERENCES public.courses(course_id)
 );
-
--- [FIX] library_settings: เพิ่ม UNIQUE constraint เพื่อให้ ON CONFLICT ทำงานถูกต้อง
---       และล็อกให้มีได้แค่ 1 row เสมอ (singleton pattern)
-CREATE TABLE IF NOT EXISTS library_settings (
-    setting_id    SERIAL PRIMARY KEY,
-    singleton     BOOLEAN UNIQUE DEFAULT TRUE,          -- บังคับให้มีได้ 1 row
-    max_days_limit INT     DEFAULT 7,
-    fine_per_day   DECIMAL(10, 2) DEFAULT 5.00,
-    CONSTRAINT chk_singleton CHECK (singleton = TRUE)   -- ค่าต้องเป็น TRUE เสมอ
+CREATE TABLE public.library_records (
+  record_id integer NOT NULL DEFAULT nextval('library_records_record_id_seq'::regclass),
+  student_id integer,
+  book_id integer,
+  borrow_date date DEFAULT CURRENT_DATE,
+  due_date date NOT NULL,
+  return_date date,
+  fine_amount numeric DEFAULT 0,
+  status character varying DEFAULT 'Borrowed'::character varying,
+  CONSTRAINT library_records_pkey PRIMARY KEY (record_id),
+  CONSTRAINT library_records_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(student_id),
+  CONSTRAINT library_records_book_id_fkey FOREIGN KEY (book_id) REFERENCES public.books(book_id)
 );
-
-INSERT INTO library_settings (singleton, max_days_limit, fine_per_day)
-VALUES (TRUE, 7, 5.00)
-ON CONFLICT (singleton) DO NOTHING;   -- [FIX] ON CONFLICT ทำงานได้แล้ว
-
-CREATE TABLE IF NOT EXISTS library_records (
-    record_id   SERIAL PRIMARY KEY,
-    student_id  INT REFERENCES students(student_id) ON DELETE CASCADE,
-    book_id     INT REFERENCES books(book_id),
-    borrow_date DATE DEFAULT CURRENT_DATE,
-    due_date    DATE NOT NULL,
-    return_date DATE,
-    fine_amount DECIMAL(10, 2) DEFAULT 0,
-    status      VARCHAR(20) DEFAULT 'Borrowed'
+CREATE TABLE public.library_settings (
+  setting_id integer NOT NULL DEFAULT nextval('library_settings_setting_id_seq'::regclass),
+  max_days_limit integer DEFAULT 7,
+  fine_per_day numeric DEFAULT 5.00,
+  CONSTRAINT library_settings_pkey PRIMARY KEY (setting_id)
 );
-
--- [FIX] กันยืมหนังสือเล่มเดิมซ้ำในขณะที่ยังไม่คืน (Partial Unique Index)
-CREATE UNIQUE INDEX IF NOT EXISTS uix_active_borrow
-    ON library_records (student_id, book_id)
-    WHERE status = 'Borrowed';
-
--- 4. ระบบการเรียนและตารางสอบ (Courses, Schedules, Exams)
-CREATE TABLE IF NOT EXISTS courses (
-    course_id   SERIAL PRIMARY KEY,
-    course_code VARCHAR(10)  UNIQUE NOT NULL,
-    title       VARCHAR(100) NOT NULL,
-    credits     INT DEFAULT 3 CHECK (credits > 0),
-    dept_id     INT REFERENCES departments(dept_id)
+CREATE TABLE public.password_reset_requests (
+  request_id integer NOT NULL DEFAULT nextval('password_reset_requests_request_id_seq'::regclass),
+  user_id integer,
+  status character varying DEFAULT 'pending'::character varying CHECK (status::text = ANY (ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying]::text[])),
+  resolved_by integer,
+  resolved_at timestamp without time zone,
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT password_reset_requests_pkey PRIMARY KEY (request_id),
+  CONSTRAINT password_reset_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id),
+  CONSTRAINT password_reset_requests_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users(user_id)
 );
-
-CREATE TABLE IF NOT EXISTS class_schedules (
-    schedule_id SERIAL PRIMARY KEY,
-    course_id   INT REFERENCES courses(course_id) ON DELETE CASCADE,
-    prof_id     INT REFERENCES professors(prof_id),
-    day_of_week VARCHAR(10),
-    start_time  TIME,
-    end_time    TIME,
-    room_number VARCHAR(20),
-    -- [FIX] บังคับให้ start_time < end_time
-    CONSTRAINT chk_schedule_time CHECK (start_time < end_time)
+CREATE TABLE public.professors (
+  prof_id integer NOT NULL DEFAULT nextval('professors_prof_id_seq'::regclass),
+  user_id integer UNIQUE,
+  first_name character varying NOT NULL,
+  last_name character varying NOT NULL,
+  profile_image character varying DEFAULT 'default_prof.png'::character varying,
+  dept_id integer,
+  CONSTRAINT professors_pkey PRIMARY KEY (prof_id),
+  CONSTRAINT professors_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id),
+  CONSTRAINT professors_dept_id_fkey FOREIGN KEY (dept_id) REFERENCES public.departments(dept_id)
 );
-
--- [FIX] Unique index กันห้องชนกัน (ห้อง + วัน + เวลาซ้อนกัน)
---       ใช้ Exclusion Constraint (ต้องติดตั้ง btree_gist extension)
--- หากไม่ต้องการใช้ extension ให้ลบบรรทัดนี้และ handle ใน application แทน
--- CREATE EXTENSION IF NOT EXISTS btree_gist;
--- ALTER TABLE class_schedules
---     ADD CONSTRAINT excl_room_overlap
---     EXCLUDE USING gist (
---         room_number WITH =,
---         day_of_week WITH =,
---         tsrange(
---             ('2000-01-01'::date + start_time)::timestamp,
---             ('2000-01-01'::date + end_time)::timestamp
---         ) WITH &&
---     );
-
-CREATE TABLE IF NOT EXISTS exam_schedules (
-    exam_id     SERIAL PRIMARY KEY,
-    course_id   INT REFERENCES courses(course_id) ON DELETE CASCADE,
-    -- [FIX] เพิ่ม prof_id เพื่อระบุผู้คุมสอบ
-    prof_id     INT REFERENCES professors(prof_id),
-    exam_type   VARCHAR(20) DEFAULT 'Final',  -- Midterm, Final
-    exam_date   DATE NOT NULL,
-    start_time  TIME NOT NULL,
-    end_time    TIME NOT NULL,
-    room_number VARCHAR(20),
-    -- [FIX] บังคับให้ start_time < end_time
-    CONSTRAINT chk_exam_time CHECK (start_time < end_time)
+CREATE TABLE public.roles (
+  role_id integer NOT NULL DEFAULT nextval('roles_role_id_seq'::regclass),
+  role_name character varying NOT NULL UNIQUE,
+  CONSTRAINT roles_pkey PRIMARY KEY (role_id)
 );
-
--- [FIX] กันนักศึกษาลงทะเบียนวิชาเดิมซ้ำในภาคการศึกษาเดียวกัน
-CREATE TABLE IF NOT EXISTS enrollments (
-    enrollment_id SERIAL PRIMARY KEY,
-    student_id    INT REFERENCES students(student_id) ON DELETE CASCADE,
-    course_id     INT REFERENCES courses(course_id)   ON DELETE CASCADE,
-    grade         VARCHAR(2) CHECK (grade IN ('A','B+','B','C+','C','D+','D','F','W','I')),
-    semester      VARCHAR(20),
-    -- [FIX] UNIQUE constraint กันลงทะเบียนซ้ำ
-    CONSTRAINT uix_enrollment UNIQUE (student_id, course_id, semester)
+CREATE TABLE public.students (
+  student_id integer NOT NULL DEFAULT nextval('students_student_id_seq'::regclass),
+  user_id integer UNIQUE,
+  first_name character varying NOT NULL,
+  last_name character varying NOT NULL,
+  profile_image character varying DEFAULT 'default_std.png'::character varying,
+  enrollment_date date DEFAULT CURRENT_DATE,
+  CONSTRAINT students_pkey PRIMARY KEY (student_id),
+  CONSTRAINT students_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id)
 );
-
--- 5. ระบบบันทึกและฟังก์ชัน
-
--- [FIX] Trigger อัปเดต available_copies เมื่อยืม / คืนหนังสือ
-CREATE OR REPLACE FUNCTION update_book_availability()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- ยืมหนังสือ → ลด available_copies
-    IF TG_OP = 'INSERT' THEN
-        UPDATE books
-        SET available_copies = available_copies - 1
-        WHERE book_id = NEW.book_id
-          AND available_copies > 0;
-
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'หนังสือไม่มีในคลัง (book_id: %)', NEW.book_id;
-        END IF;
-
-    -- คืนหนังสือ → เพิ่ม available_copies
-    ELSIF TG_OP = 'UPDATE'
-      AND NEW.return_date IS NOT NULL
-      AND OLD.return_date IS NULL THEN
-        UPDATE books
-        SET available_copies = available_copies + 1
-        WHERE book_id = NEW.book_id;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_update_availability
-AFTER INSERT OR UPDATE ON library_records
-FOR EACH ROW
-EXECUTE FUNCTION update_book_availability();
-
--- Trigger คำนวณค่าปรับเมื่อคืนหนังสือ (เดิม — คงไว้)
-CREATE OR REPLACE FUNCTION calculate_library_fine()
-RETURNS TRIGGER AS $$
-DECLARE
-    fine_rate DECIMAL(10, 2);
-BEGIN
-    SELECT fine_per_day INTO fine_rate FROM library_settings LIMIT 1;
-
-    IF NEW.return_date IS NOT NULL AND OLD.return_date IS NULL THEN
-        IF NEW.return_date > OLD.due_date THEN
-            NEW.fine_amount := (NEW.return_date - OLD.due_date) * fine_rate;
-            NEW.status      := 'Returned (Late)';
-        ELSE
-            NEW.fine_amount := 0;
-            NEW.status      := 'Returned';
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_calculate_fine
-BEFORE UPDATE ON library_records
-FOR EACH ROW
-EXECUTE FUNCTION calculate_library_fine();
-
-CREATE TABLE IF NOT EXISTS system_logs (
-    log_id     SERIAL PRIMARY KEY,
-    user_id    INT REFERENCES users(user_id),
-    action     TEXT         NOT NULL,
-    table_name VARCHAR(50),
-    record_id  INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE public.system_logs (
+  log_id integer NOT NULL DEFAULT nextval('system_logs_log_id_seq'::regclass),
+  user_id integer,
+  action text NOT NULL,
+  table_name character varying,
+  record_id integer,
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT system_logs_pkey PRIMARY KEY (log_id),
+  CONSTRAINT system_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id)
 );
-
--- 6. วิวแสดงข้อมูล
-
--- [FIX] v_user_profiles: Admin ที่ไม่มีแถวใน students/professors
---       จะแสดงเป็น NULL แทนการ hardcode 'System' / 'Admin'
-CREATE OR REPLACE VIEW v_user_profiles AS
-SELECT
-    u.user_id,
-    u.username,
-    r.role_name,
-    COALESCE(s.first_name,  p.first_name)  AS first_name,
-    COALESCE(s.last_name,   p.last_name)   AS last_name,
-    COALESCE(s.profile_image, p.profile_image, 'admin_icon.png') AS profile_image,
-    u.is_active,
-    u.last_login
-FROM users u
-JOIN  roles      r ON u.role_id  = r.role_id
-LEFT JOIN students   s ON u.user_id  = s.user_id
-LEFT JOIN professors p ON u.user_id  = p.user_id;
-
--- v_library_status (เดิม — คงไว้ ใช้งานได้ถูกต้องแล้ว)
-CREATE OR REPLACE VIEW v_library_status AS
-SELECT
-    lr.record_id,
-    s.first_name || ' ' || s.last_name AS student_name,
-    b.title                             AS book_title,
-    lr.borrow_date,
-    lr.due_date,
-    lr.return_date,
-    CASE
-        WHEN lr.return_date IS NULL AND CURRENT_DATE > lr.due_date
-        THEN (CURRENT_DATE - lr.due_date)
-             * (SELECT fine_per_day FROM library_settings LIMIT 1)
-        ELSE lr.fine_amount
-    END AS current_fine,
-    lr.status
-FROM library_records lr
-JOIN  students s ON lr.student_id = s.student_id
-LEFT JOIN books b ON lr.book_id   = b.book_id;
+CREATE TABLE public.users (
+  user_id integer NOT NULL DEFAULT nextval('users_user_id_seq'::regclass),
+  username character varying NOT NULL UNIQUE,
+  password_secure text NOT NULL,
+  email character varying NOT NULL UNIQUE,
+  role_id integer,
+  is_active boolean DEFAULT true,
+  last_login timestamp without time zone,
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT users_pkey PRIMARY KEY (user_id),
+  CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(role_id)
+);

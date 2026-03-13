@@ -20,10 +20,10 @@ const GRADES = ['A','B+','B','C+','C','D+','D','F','W','I'];
           <!-- Course Selector -->
           <div class="d-flex gap-2 mb-4 align-items-center">
             <label class="form-label mb-0 fw-semibold">เลือกรายวิชา:</label>
-            <select class="form-select" style="max-width:280px" [(ngModel)]="selectedCourse" (ngModelChange)="loadStudents()">
+            <select class="form-select" style="max-width:380px" [(ngModel)]="selectedCourse" (ngModelChange)="loadStudents()">
               <option value="">-- เลือกรายวิชา --</option>
-              <option *ngFor="let c of courses()" [value]="c.course_id">
-                {{ c.course_code }} – {{ c.title }}
+              <option *ngFor="let c of courses()" [value]="c.schedule_id">
+                {{ c.course_code }} – {{ c.title }} ({{ c.day_of_week }} {{ c.start_time }}–{{ c.end_time }})
               </option>
             </select>
           </div>
@@ -115,7 +115,7 @@ export class ProfGradesComponent implements OnInit {
 
     if (!grades.length) return;
     this.saving.set(true);
-    this.api.submitBulkGrades(+this.selectedCourse, grades).subscribe({
+    this.api.submitBulkGrades(+this.selectedCourse, grades).subscribe({  // selectedCourse = schedule_id
       next: r => {
         this.savedMsg.set(`บันทึกเกรดสำเร็จ ${grades.length} รายการ`);
         this.saving.set(false);

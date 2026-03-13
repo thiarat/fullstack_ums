@@ -6,7 +6,10 @@ export const adminRoutes: Routes = [
   { path: 'students',    loadComponent: () => import('./students/students.component').then(m => m.AdminStudentsComponent) },
   { path: 'professors',  loadComponent: () => import('./professors/professors.component').then(m => m.AdminProfessorsComponent) },
   { path: 'departments', loadComponent: () => import('./departments/departments.component').then(m => m.AdminDepartmentsComponent) },
-  { path: 'courses',     loadComponent: () => import('./courses/courses.component').then(m => m.AdminCoursesComponent) },
-  { path: 'library',     loadComponent: () => import('./library/library.component').then(m => m.AdminLibraryComponent) },
-  { path: 'logs',        loadComponent: () => import('./logs/logs.component').then(m => m.AdminLogsComponent) },
+  { path: 'courses',       loadComponent: () => import('./courses/courses.component').then(m => m.AdminCoursesComponent) },
+  { path: 'courses-profs', loadComponent: () => import('./courses-profs/courses-profs.component').then(m => m.AdminCourseProfsComponent) },
+  { path: 'library',         loadComponent: () => import('./library/library.component').then(m => m.AdminLibraryComponent) },
+  { path: 'password-reset',  loadComponent: () => import('./password-reset/password-reset.component').then(m => m.AdminPasswordResetComponent) },
+  { path: 'exam-schedules', loadComponent: () => import('./exam-schedules/exam-schedules.component').then(m => m.AdminExamSchedulesComponent) },
+  { path: 'logs',           loadComponent: () => import('./logs/logs.component').then(m => m.AdminLogsComponent) },
 ];

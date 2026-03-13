@@ -31,23 +31,40 @@ const getDashboardStats = async () => {
 };
 
 // ─── STUDENTS ──────────────────────────────────────────────────
-const getAllStudents = async ({ page = 1, limit = 20, search = '' }) => {
+const getAllStudents = async ({ page = 1, limit = 20, search = '', is_active = null }) => {
   const offset = (page - 1) * limit;
   const searchParam = `%${search}%`;
+
+  const dataParams  = [searchParam, limit, offset];
+  const countParams = [searchParam];
+  let statusClause  = '';
+
+  if (is_active !== null && is_active !== '') {
+    const boolVal = is_active === 'true' || is_active === true;
+    dataParams.push(boolVal);
+    countParams.push(boolVal);
+    statusClause = `AND u.is_active = $${dataParams.length}`;
+  }
+
   const [data, count] = await Promise.all([
     db.query(
       `SELECT s.student_id, s.first_name, s.last_name, s.profile_image,
-              s.enrollment_date, u.user_id, u.username, u.email, u.is_active, u.last_login
+              s.enrollment_date, u.user_id, u.username, u.email, u.is_active, u.last_login,
+              (SELECT COUNT(*) FROM enrollments e
+               WHERE e.student_id = s.student_id
+                 AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))) AS enrollment_count
        FROM students s
        JOIN users u ON s.user_id = u.user_id
-       WHERE s.first_name ILIKE $1 OR s.last_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1
+       WHERE (s.first_name ILIKE $1 OR s.last_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1)
+       ${statusClause}
        ORDER BY s.student_id LIMIT $2 OFFSET $3`,
-      [searchParam, limit, offset]
+      dataParams
     ),
     db.query(
       `SELECT COUNT(*) FROM students s JOIN users u ON s.user_id = u.user_id
-       WHERE s.first_name ILIKE $1 OR s.last_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1`,
-      [searchParam]
+       WHERE (s.first_name ILIKE $1 OR s.last_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1)
+       ${statusClause ? `AND u.is_active = $2` : ''}`,
+      countParams
     ),
   ]);
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
@@ -64,15 +81,15 @@ const getStudentById = async (studentId) => {
   return result.rows[0];
 };
 
-// NEW: get student schedule for admin popup
+// get student schedule for admin popup — join via schedule_id
 const getStudentSchedule = async (studentId) => {
   const result = await db.query(
     `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
             c.course_code, c.title as course_title, c.credits,
             p.first_name || ' ' || p.last_name as professor_name
      FROM enrollments e
-     JOIN courses c ON e.course_id = c.course_id
-     JOIN class_schedules cs ON c.course_id = cs.course_id
+     JOIN class_schedules cs ON e.schedule_id = cs.schedule_id
+     JOIN courses c ON cs.course_id = c.course_id
      LEFT JOIN professors p ON cs.prof_id = p.prof_id
      WHERE e.student_id = $1 AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
      ORDER BY
@@ -94,28 +111,23 @@ const updateStudentStatus = async (studentId, isActive) => {
   return { student_id: studentId, is_active: isActive };
 };
 
-// NEW: create user (student or professor)
+// create user (student or professor)
 const createUser = async ({ username, password, email, role_name, first_name, last_name, dept_id }) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-
-    // check duplicate
     const existing = await client.query(
       'SELECT user_id FROM users WHERE username = $1 OR email = $2', [username, email]
     );
     if (existing.rows.length > 0) throw { statusCode: 409, message: 'Username หรือ Email ซ้ำในระบบ' };
-
     const role = await client.query('SELECT role_id FROM roles WHERE role_name = $1', [role_name]);
     if (role.rows.length === 0) throw { statusCode: 400, message: 'Role ไม่ถูกต้อง' };
-
     const hash = await bcrypt.hash(password, 10);
     const userResult = await client.query(
       'INSERT INTO users (username, password_secure, email, role_id) VALUES ($1, $2, $3, $4) RETURNING *',
       [username, hash, email, role.rows[0].role_id]
     );
     const user = userResult.rows[0];
-
     if (role_name === 'Student') {
       await client.query(
         'INSERT INTO students (user_id, first_name, last_name) VALUES ($1, $2, $3)',
@@ -127,7 +139,6 @@ const createUser = async ({ username, password, email, role_name, first_name, la
         [user.user_id, first_name, last_name, dept_id || null]
       );
     }
-
     await client.query('COMMIT');
     return { user_id: user.user_id, username, email, role_name, first_name, last_name };
   } catch (err) {
@@ -138,13 +149,10 @@ const createUser = async ({ username, password, email, role_name, first_name, la
   }
 };
 
-// NEW: update user info
 const updateUser = async (userId, { first_name, last_name, email, dept_id }) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-
-    // get role
     const roleRes = await client.query(
       `SELECT r.role_name, s.student_id, p.prof_id
        FROM users u
@@ -155,9 +163,7 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
     );
     if (roleRes.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
     const { role_name, student_id, prof_id } = roleRes.rows[0];
-
     if (email) await client.query('UPDATE users SET email = $1 WHERE user_id = $2', [email, userId]);
-
     if (role_name === 'Student' && student_id) {
       await client.query(
         'UPDATE students SET first_name = COALESCE($1,first_name), last_name = COALESCE($2,last_name) WHERE student_id = $3',
@@ -173,7 +179,6 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
         [first_name, last_name, dept_id, prof_id]
       );
     }
-
     await client.query('COMMIT');
     return { user_id: userId, updated: true };
   } catch (err) {
@@ -184,7 +189,6 @@ const updateUser = async (userId, { first_name, last_name, email, dept_id }) => 
   }
 };
 
-// NEW: delete user
 const deleteUser = async (userId) => {
   const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
   if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
@@ -192,7 +196,6 @@ const deleteUser = async (userId) => {
   return { deleted: true };
 };
 
-// NEW: admin reset password for a user
 const adminResetPassword = async (userId, newPassword) => {
   const check = await db.query('SELECT user_id FROM users WHERE user_id = $1', [userId]);
   if (check.rows.length === 0) throw { statusCode: 404, message: 'User not found.' };
@@ -201,7 +204,6 @@ const adminResetPassword = async (userId, newPassword) => {
   return { user_id: userId, reset: true };
 };
 
-// NEW: password reset requests
 const getPasswordResetRequests = async () => {
   const result = await db.query(
     `SELECT pr.request_id, pr.user_id, pr.status, pr.created_at,
@@ -219,13 +221,30 @@ const getPasswordResetRequests = async () => {
   return result.rows;
 };
 
+const getPasswordResetHistory = async () => {
+  const result = await db.query(
+    `SELECT pr.request_id, pr.user_id, pr.status, pr.created_at, pr.resolved_at,
+            u.username, u.email, r.role_name,
+            COALESCE(s.first_name, p.first_name) as first_name,
+            COALESCE(s.last_name,  p.last_name)  as last_name
+     FROM password_reset_requests pr
+     JOIN users u   ON pr.user_id = u.user_id
+     JOIN roles r   ON u.role_id  = r.role_id
+     LEFT JOIN students s   ON u.user_id = s.user_id
+     LEFT JOIN professors p ON u.user_id = p.user_id
+     WHERE pr.status IN ('approved', 'rejected')
+     ORDER BY pr.resolved_at DESC
+     LIMIT 200`
+  );
+  return result.rows;
+};
+
 const approvePasswordReset = async (requestId, newPassword, adminUserId) => {
   const req = await db.query(
     `SELECT * FROM password_reset_requests WHERE request_id = $1 AND status = 'pending'`,
     [requestId]
   );
   if (req.rows.length === 0) throw { statusCode: 404, message: 'Request not found or already processed.' };
-
   const hash = await bcrypt.hash(newPassword, 10);
   const client = await db.getClient();
   try {
@@ -265,7 +284,9 @@ const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = n
   const [data, count] = await Promise.all([
     db.query(
       `SELECT p.prof_id, p.first_name, p.last_name, p.profile_image,
-              d.name as department, u.user_id, u.username, u.email, u.is_active, u.last_login
+              p.dept_id, d.name as department,
+              u.user_id, u.username, u.email, u.is_active, u.last_login,
+              (SELECT COUNT(*) FROM class_schedules cs WHERE cs.prof_id = p.prof_id) AS course_count
        FROM professors p
        JOIN users u ON p.user_id = u.user_id
        LEFT JOIN departments d ON p.dept_id = d.dept_id
@@ -275,11 +296,82 @@ const getAllProfessors = async ({ page = 1, limit = 20, search = '', dept_id = n
     ),
     db.query(
       `SELECT COUNT(*) FROM professors p JOIN users u ON p.user_id = u.user_id
-       WHERE (p.first_name ILIKE $1 OR p.last_name ILIKE $1) ${deptFilter}`,
+       WHERE (p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR u.email ILIKE $1)
+       ${dept_id ? 'AND p.dept_id = $2' : ''}`,
       dept_id ? [`%${search}%`, dept_id] : [`%${search}%`]
     ),
   ]);
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
+};
+
+const updateProfessorStatus = async (profId, isActive) => {
+  const prof = await db.query('SELECT user_id FROM professors WHERE prof_id = $1', [profId]);
+  if (prof.rows.length === 0) throw { statusCode: 404, message: 'Professor not found.' };
+  await db.query('UPDATE users SET is_active = $1 WHERE user_id = $2', [isActive, prof.rows[0].user_id]);
+  return { prof_id: profId, is_active: isActive };
+};
+
+const updateProfessor = async (profId, { first_name, last_name, dept_id, email }) => {
+  const prof = await db.query('SELECT user_id FROM professors WHERE prof_id = $1', [profId]);
+  if (prof.rows.length === 0) throw { statusCode: 404, message: 'Professor not found.' };
+  const userId = prof.rows[0].user_id;
+  await db.query(
+    'UPDATE professors SET first_name = $1, last_name = $2, dept_id = $3 WHERE prof_id = $4',
+    [first_name, last_name, dept_id || null, profId]
+  );
+  if (email) {
+    await db.query('UPDATE users SET email = $1 WHERE user_id = $2', [email, userId]);
+  }
+  return { prof_id: profId };
+};
+
+// get professor schedule for admin popup — use schedule_id join for enrollment count
+const getProfSchedule = async (profId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            c.course_code, c.title as course_title, c.credits,
+            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+     FROM class_schedules cs
+     JOIN courses c ON cs.course_id = c.course_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     WHERE cs.prof_id = $1
+     GROUP BY cs.schedule_id, c.course_id
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2
+         WHEN 'Wednesday' THEN 3 WHEN 'Thursday'  THEN 4
+         WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+         WHEN 'Sunday'    THEN 7
+       END, cs.start_time`,
+    [profId]
+  );
+  return result.rows;
+};
+
+// get course schedule for admin popup — use schedule_id join
+const getCourseSchedule = async (courseId) => {
+  const result = await db.query(
+    `SELECT cs.schedule_id, cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+            p.first_name || ' ' || p.last_name as professor_name,
+            p.prof_id,
+            COUNT(DISTINCT e.enrollment_id) as enrolled_students
+     FROM class_schedules cs
+     LEFT JOIN professors p ON cs.prof_id = p.prof_id
+     LEFT JOIN enrollments e ON cs.schedule_id = e.schedule_id
+       AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+     WHERE cs.course_id = $1
+     GROUP BY cs.schedule_id, p.prof_id
+     ORDER BY
+       CASE cs.day_of_week
+         WHEN 'Monday'    THEN 1 WHEN 'Tuesday'   THEN 2
+         WHEN 'Wednesday' THEN 3 WHEN 'Thursday'  THEN 4
+         WHEN 'Friday'    THEN 5 WHEN 'Saturday'  THEN 6
+         WHEN 'Sunday'    THEN 7
+       END, cs.start_time`,
+    [courseId]
+  );
+  return result.rows;
 };
 
 // ─── DEPARTMENTS ───────────────────────────────────────────────
@@ -321,22 +413,33 @@ const deleteDepartment = async (deptId) => {
 const getAllCourses = async ({ page = 1, limit = 20, search = '', dept_id = null }) => {
   const offset = (page - 1) * limit;
   const params = [`%${search}%`, limit, offset];
-  let deptFilter = '';
-  if (dept_id) { params.push(dept_id); deptFilter = `AND c.dept_id = $${params.length}`; }
+  const countParams = [`%${search}%`];
+  let deptFilter = ''; let countDeptFilter = '';
+  if (dept_id) {
+    params.push(dept_id); deptFilter = `AND c.dept_id = $${params.length}`;
+    countParams.push(dept_id); countDeptFilter = `AND c.dept_id = $2`;
+  }
 
-  const result = await db.query(
-    `SELECT c.course_id, c.course_code, c.title, c.credits,
-            d.name as department,
-            COUNT(DISTINCT e.enrollment_id) as enrolled_students
-     FROM courses c
-     LEFT JOIN departments d ON c.dept_id = d.dept_id
-     LEFT JOIN enrollments e ON c.course_id = e.course_id
-     WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1) ${deptFilter}
-     GROUP BY c.course_id, d.name
-     ORDER BY c.course_code LIMIT $2 OFFSET $3`,
-    params
-  );
-  return { data: result.rows, page, limit };
+  const [data, count] = await Promise.all([
+    db.query(
+      `SELECT c.course_id, c.course_code, c.title, c.credits,
+              d.name as department,
+              COUNT(DISTINCT cs.prof_id) as professor_count
+       FROM courses c
+       LEFT JOIN departments d ON c.dept_id = d.dept_id
+       LEFT JOIN class_schedules cs ON c.course_id = cs.course_id
+       WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1) ${deptFilter}
+       GROUP BY c.course_id, d.name
+       ORDER BY c.course_code LIMIT $2 OFFSET $3`,
+      params
+    ),
+    db.query(
+      `SELECT COUNT(*) FROM courses c
+       WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1) ${countDeptFilter}`,
+      countParams
+    ),
+  ]);
+  return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
 const createCourse = async ({ course_code, title, credits, dept_id }) => {
@@ -366,6 +469,227 @@ const deleteCourse = async (courseId) => {
   return result.rows[0];
 };
 
+// ─── COURSES-PROFS LIST (รายวิชา-อาจารย์) ─────────────────────
+// Returns one row per (course × professor schedule) with enrolled student count
+const getCourseProfList = async ({ search = '', dept_id = null, page = 1, limit = 25 } = {}) => {
+  const offset = (page - 1) * limit;
+  const params = [`%${search}%`, limit, offset];
+  const countParams = [`%${search}%`];
+  let deptFilter = ''; let countDeptFilter = '';
+  if (dept_id) {
+    params.push(dept_id); deptFilter = `AND c.dept_id = $${params.length}`;
+    countParams.push(dept_id); countDeptFilter = `AND c.dept_id = $2`;
+  }
+
+  const [data, count] = await Promise.all([
+    db.query(
+      `SELECT cs.schedule_id,
+              c.course_id, c.course_code, c.title, c.credits,
+              d.name as department,
+              p.prof_id,
+              p.first_name || ' ' || p.last_name as professor_name,
+              cs.day_of_week, cs.start_time, cs.end_time, cs.room_number,
+              COUNT(DISTINCT e.enrollment_id) as enrolled_students
+       FROM class_schedules cs
+       JOIN courses c ON cs.course_id = c.course_id
+       LEFT JOIN departments d ON c.dept_id = d.dept_id
+       LEFT JOIN professors p ON cs.prof_id = p.prof_id
+       LEFT JOIN enrollments e ON e.schedule_id = cs.schedule_id
+         AND (e.grade IS NULL OR e.grade NOT IN ('W','F'))
+       WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1
+              OR p.first_name ILIKE $1 OR p.last_name ILIKE $1) ${deptFilter}
+       GROUP BY cs.schedule_id, c.course_id, d.dept_id, p.prof_id
+       ORDER BY c.course_code, p.last_name
+       LIMIT $2 OFFSET $3`,
+      params
+    ),
+    db.query(
+      `SELECT COUNT(*) FROM class_schedules cs
+       JOIN courses c ON cs.course_id = c.course_id
+       LEFT JOIN professors p ON cs.prof_id = p.prof_id
+       WHERE (c.title ILIKE $1 OR c.course_code ILIKE $1
+              OR p.first_name ILIKE $1 OR p.last_name ILIKE $1) ${countDeptFilter}`,
+      countParams
+    ),
+  ]);
+  return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
+};
+
+// Returns students enrolled in a specific schedule (for popup)
+const getCourseProfStudents = async (scheduleId) => {
+  const result = await db.query(
+    `SELECT e.enrollment_id, e.grade, e.semester,
+            s.student_id, s.first_name, s.last_name,
+            u.email, u.username as student_code
+     FROM enrollments e
+     JOIN students s ON e.student_id = s.student_id
+     JOIN users u ON s.user_id = u.user_id
+     WHERE e.schedule_id = $1
+       AND (e.grade IS NULL OR e.grade NOT IN ('W'))
+     ORDER BY s.last_name, s.first_name`,
+    [scheduleId]
+  );
+  return result.rows;
+};
+
+// ─── EXAM SCHEDULES (ADMIN) ────────────────────────────────────
+const getAllExamSchedules = async ({ search, dept_id, exam_type, page = 1, limit = 20 } = {}) => {
+  const conditions = [];
+  const params = [];
+  let i = 1;
+
+  if (search) {
+    conditions.push(`(c.course_code ILIKE $${i} OR c.title ILIKE $${i} OR p.first_name ILIKE $${i} OR p.last_name ILIKE $${i})`);
+    params.push(`%${search}%`); i++;
+  }
+  if (dept_id) { conditions.push(`d.dept_id = $${i}`); params.push(dept_id); i++; }
+  if (exam_type) { conditions.push(`es.exam_type = $${i}`); params.push(exam_type); i++; }
+
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+  const offset = (page - 1) * limit;
+
+  const [data, count] = await Promise.all([
+    db.query(
+      `SELECT es.exam_id, es.exam_type, es.exam_date, es.start_time, es.end_time, es.room_number,
+              c.course_id, c.course_code, c.title as course_title,
+              CONCAT(p.first_name, ' ', p.last_name) as prof_name,
+              d.name as dept_name, d.dept_id, cs.schedule_id
+       FROM exam_schedules es
+       JOIN courses c ON es.course_id = c.course_id
+       LEFT JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+       LEFT JOIN professors p ON cs.prof_id = p.prof_id
+       LEFT JOIN departments d ON c.dept_id = d.dept_id
+       ${where}
+       ORDER BY es.exam_date DESC NULLS LAST, c.course_code
+       LIMIT $${i} OFFSET $${i + 1}`,
+      [...params, limit, offset]
+    ),
+    db.query(
+      `SELECT COUNT(*) FROM exam_schedules es
+       JOIN courses c ON es.course_id = c.course_id
+       LEFT JOIN class_schedules cs ON es.schedule_id = cs.schedule_id
+       LEFT JOIN professors p ON cs.prof_id = p.prof_id
+       LEFT JOIN departments d ON c.dept_id = d.dept_id
+       ${where}`,
+      params
+    ),
+  ]);
+  return { data: data.rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit };
+};
+
+const adminUpdateExamSchedule = async (examId, data) => {
+  const { exam_type, exam_date, start_time, end_time, room_number } = data;
+  const sets = []; const params = []; let i = 1;
+  if (exam_type)   { sets.push(`exam_type = $${i++}`);   params.push(exam_type); }
+  if (exam_date)   { sets.push(`exam_date = $${i++}`);   params.push(exam_date); }
+  if (start_time)  { sets.push(`start_time = $${i++}`);  params.push(start_time); }
+  if (end_time)    { sets.push(`end_time = $${i++}`);    params.push(end_time); }
+  if (room_number !== undefined) { sets.push(`room_number = $${i++}`); params.push(room_number); }
+  if (sets.length === 0) throw { statusCode: 400, message: 'No fields to update' };
+  params.push(examId);
+  const result = await db.query(
+    `UPDATE exam_schedules SET ${sets.join(', ')} WHERE exam_id = $${i} RETURNING *`,
+    params
+  );
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบตารางสอบ' };
+  return result.rows[0];
+};
+
+const adminDeleteExamSchedule = async (examId) => {
+  const result = await db.query('DELETE FROM exam_schedules WHERE exam_id=$1 RETURNING exam_id', [examId]);
+  if (result.rows.length === 0) throw { statusCode: 404, message: 'ไม่พบตารางสอบ' };
+  return { deleted: true };
+};
+
+// ─── EXAM SUMMARY ─────────────────────────────────────────────
+const getExamSummary = async () => {
+  const result = await db.query(`
+    SELECT
+      (SELECT COUNT(*) FROM class_schedules WHERE prof_id IS NOT NULL) AS total_sections,
+      (SELECT COUNT(*) FROM exam_schedules) AS with_any_exam,
+      (SELECT COUNT(*) FROM class_schedules cs
+         WHERE prof_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM exam_schedules es WHERE es.schedule_id = cs.schedule_id)) AS no_exam
+  `);
+  const row = result.rows[0];
+  return {
+    total_sections: parseInt(row.total_sections),
+    with_any_exam:  parseInt(row.with_any_exam),
+    no_exam:        parseInt(row.no_exam),
+  };
+};
+
+// Returns class_schedules (with profs) missing midterm OR final exam — supports search/dept/pagination
+const getNoExamList = async ({ search, dept_id, page = 1, limit = 20 } = {}) => {
+  const having = [];
+  const conditions = [];
+  const params = [];
+  let i = 1;
+
+  if (search) {
+    conditions.push(`(c.course_code ILIKE $${i} OR c.title ILIKE $${i} OR p.first_name ILIKE $${i} OR p.last_name ILIKE $${i})`);
+    params.push(`%${search}%`); i++;
+  }
+  if (dept_id) {
+    conditions.push(`c.dept_id = $${i}`);
+    params.push(dept_id); i++;
+  }
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+  const offset = (page - 1) * limit;
+
+  const baseSql = `
+    FROM class_schedules cs
+    JOIN courses c ON cs.course_id = c.course_id
+    JOIN professors p ON cs.prof_id = p.prof_id
+    LEFT JOIN exam_schedules es ON es.schedule_id = cs.schedule_id
+    ${where}
+    GROUP BY cs.schedule_id, c.course_id, p.prof_id
+    HAVING MAX(CASE WHEN es.exam_type = 'Midterm' THEN 1 END) IS NULL
+        OR MAX(CASE WHEN es.exam_type = 'Final'   THEN 1 END) IS NULL`;
+
+  const [data, count] = await Promise.all([
+    db.query(
+      `SELECT cs.schedule_id, c.course_id, c.course_code, c.title,
+              p.first_name || ' ' || p.last_name AS professor_name,
+              MAX(CASE WHEN es.exam_type = 'Midterm' THEN es.exam_date END)    AS midterm_date,
+              MAX(CASE WHEN es.exam_type = 'Midterm' THEN es.start_time END)   AS midterm_start,
+              MAX(CASE WHEN es.exam_type = 'Midterm' THEN es.end_time END)     AS midterm_end,
+              MAX(CASE WHEN es.exam_type = 'Midterm' THEN es.room_number END)  AS midterm_room,
+              MAX(CASE WHEN es.exam_type = 'Midterm' THEN es.exam_id::text END)::int AS midterm_exam_id,
+              MAX(CASE WHEN es.exam_type = 'Final'   THEN es.exam_date END)    AS final_date,
+              MAX(CASE WHEN es.exam_type = 'Final'   THEN es.start_time END)   AS final_start,
+              MAX(CASE WHEN es.exam_type = 'Final'   THEN es.end_time END)     AS final_end,
+              MAX(CASE WHEN es.exam_type = 'Final'   THEN es.room_number END)  AS final_room,
+              MAX(CASE WHEN es.exam_type = 'Final'   THEN es.exam_id::text END)::int AS final_exam_id
+       ${baseSql}
+       ORDER BY c.course_code
+       LIMIT $${i} OFFSET $${i + 1}`,
+      [...params, limit, offset]
+    ),
+    db.query(
+      `SELECT COUNT(*) FROM (SELECT cs.schedule_id ${baseSql}) sub`,
+      params
+    ),
+  ]);
+  return { data: data.rows, total: parseInt(count.rows[0].count), page: +page, limit: +limit };
+};
+
+const adminCreateExamSchedule = async ({ schedule_id, course_id, exam_type, exam_date, start_time, end_time, room_number }) => {
+  // ตรวจซ้ำ
+  const dup = await db.query(
+    'SELECT exam_id FROM exam_schedules WHERE schedule_id = $1 AND exam_type = $2',
+    [schedule_id, exam_type]
+  );
+  if (dup.rows.length > 0) throw { statusCode: 409, message: `มีตารางสอบ${exam_type === 'Midterm' ? 'กลางภาค' : 'ปลายภาค'}อยู่แล้ว` };
+
+  const result = await db.query(
+    `INSERT INTO exam_schedules (course_id, schedule_id, exam_type, exam_date, start_time, end_time, room_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [course_id, schedule_id, exam_type, exam_date, start_time, end_time, room_number]
+  );
+  return result.rows[0];
+};
+
 // ─── SYSTEM LOGS ───────────────────────────────────────────────
 const getSystemLogs = async ({ page = 1, limit = 50 }) => {
   const offset = (page - 1) * limit;
@@ -387,9 +711,11 @@ module.exports = {
   getDashboardStats,
   getAllStudents, getStudentById, getStudentSchedule, updateStudentStatus,
   createUser, updateUser, deleteUser,
-  adminResetPassword, getPasswordResetRequests, approvePasswordReset, rejectPasswordReset,
-  getAllProfessors,
+  adminResetPassword, getPasswordResetRequests, getPasswordResetHistory, approvePasswordReset, rejectPasswordReset,
+  getAllProfessors, updateProfessorStatus, updateProfessor, getProfSchedule,
   getAllDepartments, createDepartment, updateDepartment, deleteDepartment,
-  getAllCourses, createCourse, updateCourse, deleteCourse,
+  getAllCourses, createCourse, updateCourse, deleteCourse, getCourseSchedule,
+  getCourseProfList, getCourseProfStudents,
+  getAllExamSchedules, adminCreateExamSchedule, adminUpdateExamSchedule, adminDeleteExamSchedule, getExamSummary, getNoExamList,
   getSystemLogs,
 };

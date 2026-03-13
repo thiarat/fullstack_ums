@@ -26,6 +26,7 @@ export class AdminApiService extends ApiService {
 
   // Password Reset Requests
   getPasswordResetRequests() { return this.get<any>('/admin/password-reset-requests'); }
+  getPasswordResetHistory()  { return this.get<any>('/admin/password-reset-requests/history'); }
   approvePasswordReset(requestId: number, newPassword: string) {
     return this.post<any>(`/admin/password-reset-requests/${requestId}/approve`, { new_password: newPassword });
   }
@@ -38,6 +39,9 @@ export class AdminApiService extends ApiService {
   getProfSchedule(profId: number)      { return this.get<any>(`/admin/professors/${profId}/schedule`); }
   createProfessor(body: any)           { return this.post<any>('/admin/users', body); }
   updateProfessor(profId: number, body: any) { return this.put<any>(`/admin/professors/${profId}`, body); }
+  updateProfessorStatus(profId: number, isActive: boolean) {
+    return this.patch(`/admin/professors/${profId}/status`, { is_active: isActive });
+  }
   getProfessors(pageOrParams: any = 1, limit = 20, search = '', dept_id?: number) {
     const params = typeof pageOrParams === 'object'
       ? pageOrParams
@@ -51,7 +55,12 @@ export class AdminApiService extends ApiService {
   updateDepartment(id: number, body: any) { return this.put<any>(`/admin/departments/${id}`, body); }
   deleteDepartment(id: number) { return this.delete<any>(`/admin/departments/${id}`); }
 
+  // Courses-Profs (รายวิชา-อาจารย์)
+  getCourseProfList(params: any = {}) { return this.get<any>('/admin/courses-profs', params); }
+  getCourseProfStudents(scheduleId: number) { return this.get<any>(`/admin/courses-profs/${scheduleId}/students`); }
+
   // Courses — รับทั้ง positional args และ params object
+  getCourseSchedule(courseId: number) { return this.get<any>(`/admin/courses/${courseId}/schedule`); }
   getCourses(pageOrParams: any = 1, limit = 20, search = '', dept_id?: number) {
     const params = typeof pageOrParams === 'object'
       ? pageOrParams
@@ -61,6 +70,14 @@ export class AdminApiService extends ApiService {
   createCourse(body: any) { return this.post<any>('/admin/courses', body); }
   updateCourse(id: number, body: any) { return this.put<any>(`/admin/courses/${id}`, body); }
   deleteCourse(id: number) { return this.delete<any>(`/admin/courses/${id}`); }
+
+  // Exam Schedules
+  getNoExamList(params: any = {}) { return this.get<any>('/admin/exam-schedules/no-exam', params); }
+  getExamSummary() { return this.get<any>('/admin/exam-schedules/summary'); }
+  getExamSchedules(params: any = {}) { return this.get<any>('/admin/exam-schedules', params); }
+  createExamSchedule(body: any) { return this.post<any>('/admin/exam-schedules', body); }
+  updateExamSchedule(examId: number, body: any) { return this.put<any>(`/admin/exam-schedules/${examId}`, body); }
+  deleteExamSchedule(examId: number) { return this.delete<any>(`/admin/exam-schedules/${examId}`); }
 
   // System Logs — รับ page, limit แบบ positional
   getSystemLogs(page = 1, limit = 50) {

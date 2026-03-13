@@ -64,6 +64,25 @@ export class AuthService {
     );
   }
 
+  refreshProfile() {
+    return this.http.get<ApiResponse<{ user: AuthUser }>>(`${environment.apiUrl}/auth/me`).pipe(
+      tap(res => {
+        if (res.success && res.data?.user) {
+          const updated = { ...this._user()!, ...res.data.user };
+          localStorage.setItem(this.USER_KEY, JSON.stringify(updated));
+          this._user.set(updated);
+        }
+      }),
+      catchError(() => throwError(() => null))
+    );
+  }
+
+  updateUserData(partial: Partial<AuthUser>) {
+    const updated = { ...this._user()!, ...partial };
+    localStorage.setItem(this.USER_KEY, JSON.stringify(updated));
+    this._user.set(updated);
+  }
+
   getHomePath(): string {
     const role = this._user()?.role;
     if (role === 'Admin') return '/admin/dashboard';

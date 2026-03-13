@@ -35,7 +35,28 @@ const refreshToken = async (req, res, next) => {
 };
 
 const getMe = async (req, res) => {
-  res.json({ success: true, data: { user: req.user } });
+  // Query fresh data from DB so name/email updates are reflected immediately
+  try {
+    const userId = req.user.user_id;
+    const result = await db.query(
+      `SELECT u.user_id, u.username, u.email, r.role_name AS role, u.is_active,
+              COALESCE(s.first_name, p.first_name, 'Admin') AS first_name,
+              COALESCE(s.last_name,  p.last_name,  '')       AS last_name,
+              COALESCE(s.profile_image, p.profile_image, u.profile_image) AS profile_image,
+              s.student_id, p.prof_id
+       FROM users u
+       JOIN roles r ON u.role_id = r.role_id
+       LEFT JOIN students s ON u.user_id = s.user_id
+       LEFT JOIN professors p ON u.user_id = p.user_id
+       WHERE u.user_id = $1`,
+      [userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found.' });
+    res.json({ success: true, data: { user: result.rows[0] } });
+  } catch (err) {
+    // Fallback to token data if DB query fails
+    res.json({ success: true, data: { user: req.user } });
+  }
 };
 
 const logout = async (req, res) => {

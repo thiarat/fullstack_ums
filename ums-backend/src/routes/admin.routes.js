@@ -22,11 +22,18 @@ router.patch('/users/:id/reset-password',            adminCtrl.adminResetPasswor
 
 // Password Reset Requests (NEW)
 router.get('/password-reset-requests',               adminCtrl.getPasswordResetRequests);
+router.get('/password-reset-requests/history',       adminCtrl.getPasswordResetHistory);
 router.post('/password-reset-requests/:requestId/approve', adminCtrl.approvePasswordReset);
 router.post('/password-reset-requests/:requestId/reject',  adminCtrl.rejectPasswordReset);
 
 // Professors
-router.get('/professors', adminCtrl.getProfessors);
+router.get('/professors',                            adminCtrl.getProfessors);
+router.get('/professors/:id/schedule',               adminCtrl.getProfSchedule);   // popup ตารางสอน
+router.put('/professors/:id',                        adminCtrl.updateProfessor);
+router.patch('/professors/:id/status',               adminCtrl.updateProfessorStatus);
+
+// Course schedule popup
+router.get('/courses/:id/schedule',                  adminCtrl.getCourseSchedule);
 
 // Departments
 router.get('/departments',       adminCtrl.getDepartments);
@@ -39,6 +46,18 @@ router.get('/courses',       adminCtrl.getCourses);
 router.post('/courses',      adminCtrl.createCourse);
 router.put('/courses/:id',   adminCtrl.updateCourse);
 router.delete('/courses/:id',adminCtrl.deleteCourse);
+
+// Courses-Profs list (รายวิชา-อาจารย์)
+router.get('/courses-profs',                              adminCtrl.getCourseProfList);
+router.get('/courses-profs/:scheduleId/students',         adminCtrl.getCourseProfStudents);
+
+// Exam Schedules
+router.get('/exam-schedules/summary',      adminCtrl.getExamSummary);      // must be before /:examId
+router.get('/exam-schedules/no-exam',      adminCtrl.getNoExamList);       // must be before /:examId
+router.get('/exam-schedules',              adminCtrl.getExamSchedules);
+router.post('/exam-schedules',             adminCtrl.createExamSchedule);
+router.put('/exam-schedules/:examId',      adminCtrl.updateExamSchedule);
+router.delete('/exam-schedules/:examId',   adminCtrl.deleteExamSchedule);
 
 // Logs
 router.get('/logs', adminCtrl.getSystemLogs);

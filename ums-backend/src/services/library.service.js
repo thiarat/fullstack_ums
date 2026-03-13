@@ -5,11 +5,9 @@ const getAllBooks = async ({ search = '', page = 1, limit = 20 }) => {
   const offset = (page - 1) * limit;
   const [data, count] = await Promise.all([
     db.query(
-      `SELECT b.*, d.name as department
-       FROM books b
-       LEFT JOIN departments d ON b.dept_id = d.dept_id
-       WHERE b.title ILIKE $1 OR b.author ILIKE $1 OR b.isbn ILIKE $1
-       ORDER BY b.title LIMIT $2 OFFSET $3`,
+      `SELECT * FROM books
+       WHERE title ILIKE $1 OR author ILIKE $1 OR isbn ILIKE $1
+       ORDER BY title LIMIT $2 OFFSET $3`,
       [`%${search}%`, limit, offset]
     ),
     db.query(
@@ -20,49 +18,33 @@ const getAllBooks = async ({ search = '', page = 1, limit = 20 }) => {
   return { data: data.rows, total: parseInt(count.rows[0].count), page, limit };
 };
 
-const createBook = async ({ isbn, title, author, total_copies = 1, dept_id = null }) => {
+const createBook = async ({ isbn, title, author, total_copies = 1, description = null, chapters = null }) => {
   const result = await db.query(
-    `INSERT INTO books (isbn, title, author, total_copies, available_copies, dept_id)
-     VALUES ($1, $2, $3, $4, $4, $5) RETURNING *`,
-    [isbn, title, author, total_copies, dept_id]
+    `INSERT INTO books (isbn, title, author, total_copies, available_copies, description, chapters)
+     VALUES ($1, $2, $3, $4, $4, $5, $6) RETURNING *`,
+    [isbn, title, author, total_copies, description, chapters ? JSON.stringify(chapters) : null]
   );
   return result.rows[0];
 };
 
-// [FIX] updateBook: sync available_copies เมื่อ total_copies เปลี่ยน
 const updateBook = async (bookId, body) => {
-  const { isbn, title, author, total_copies, dept_id } = body;
-
-  // ถ้ามีการเปลี่ยน total_copies ให้คำนวณ available_copies ใหม่
-  // available_copies_new = available_copies_old + (total_copies_new - total_copies_old)
-  let query;
-  let params;
-
-  if (total_copies !== undefined) {
-    query = `
-      UPDATE books SET
-        isbn             = COALESCE($1, isbn),
-        title            = COALESCE($2, title),
-        author           = COALESCE($3, author),
-        dept_id          = COALESCE($4, dept_id),
-        available_copies = GREATEST(0, available_copies + ($5 - total_copies)),
-        total_copies     = $5
-      WHERE book_id = $6
-      RETURNING *`;
-    params = [isbn, title, author, dept_id, total_copies, bookId];
-  } else {
-    query = `
-      UPDATE books SET
-        isbn   = COALESCE($1, isbn),
-        title  = COALESCE($2, title),
-        author = COALESCE($3, author),
-        dept_id = COALESCE($4, dept_id)
-      WHERE book_id = $5
-      RETURNING *`;
-    params = [isbn, title, author, dept_id, bookId];
-  }
-
-  const result = await db.query(query, params);
+  const { isbn, title, author, total_copies, description, chapters } = body;
+  // When total_copies changes, recalculate available_copies = new total - currently borrowed
+  const availableExpr = total_copies != null
+    ? `, available_copies = $4 - (SELECT COUNT(*) FROM library_records WHERE book_id = $7 AND status = 'Borrowed')`
+    : '';
+  const result = await db.query(
+    `UPDATE books SET
+       isbn          = COALESCE($1, isbn),
+       title         = COALESCE($2, title),
+       author        = COALESCE($3, author),
+       total_copies  = COALESCE($4, total_copies)
+       ${availableExpr},
+       description   = COALESCE($5, description),
+       chapters      = COALESCE($6, chapters)
+     WHERE book_id = $7 RETURNING *`,
+    [isbn, title, author, total_copies ?? null, description ?? null, chapters ? JSON.stringify(chapters) : null, bookId]
+  );
   if (result.rows.length === 0) throw { statusCode: 404, message: 'Book not found.' };
   return result.rows[0];
 };
@@ -79,7 +61,7 @@ const borrowBook = async (studentId, bookId) => {
   try {
     await client.query('BEGIN');
 
-    // Lock row เพื่อกัน race condition
+    // Check book available
     const book = await client.query(
       'SELECT * FROM books WHERE book_id = $1 FOR UPDATE',
       [bookId]
@@ -87,21 +69,19 @@ const borrowBook = async (studentId, bookId) => {
     if (book.rows.length === 0) throw { statusCode: 404, message: 'Book not found.' };
     if (book.rows[0].available_copies <= 0) throw { statusCode: 409, message: 'No copies available.' };
 
-    // กันยืมซ้ำ (partial unique index จัดการอยู่แล้ว แต่ให้ error message ที่ดีกว่า)
+    // Check student doesn't already have this book
     const existing = await client.query(
       `SELECT record_id FROM library_records
        WHERE student_id = $1 AND book_id = $2 AND status = 'Borrowed'`,
       [studentId, bookId]
     );
-    if (existing.rows.length > 0) {
-      throw { statusCode: 409, message: 'Student already has this book borrowed.' };
-    }
+    if (existing.rows.length > 0) throw { statusCode: 409, message: 'Student already has this book borrowed.' };
 
+    // Get library settings for due date
     const settings = await client.query('SELECT max_days_limit FROM library_settings LIMIT 1');
     const maxDays = settings.rows[0]?.max_days_limit || 7;
 
-    // [FIX] ลบ UPDATE available_copies ออก — trigger trg_update_availability จัดการเอง
-    //       แต่เนื่องจากเราลบ trigger นั้นออกจาก schema แล้ว ให้ service จัดการที่นี่
+    // Create borrow record
     const record = await client.query(
       `INSERT INTO library_records (student_id, book_id, due_date)
        VALUES ($1, $2, CURRENT_DATE + $3::int)
@@ -109,7 +89,7 @@ const borrowBook = async (studentId, bookId) => {
       [studentId, bookId, maxDays]
     );
 
-    // [FIX] อัปเดต available_copies ที่นี่เพียงที่เดียว (ไม่มี trigger ซ้ำแล้ว)
+    // Decrease available copies
     await client.query(
       'UPDATE books SET available_copies = available_copies - 1 WHERE book_id = $1',
       [bookId]
@@ -137,17 +117,15 @@ const returnBook = async (recordId) => {
        WHERE lr.record_id = $1 AND lr.status = 'Borrowed' FOR UPDATE`,
       [recordId]
     );
-    if (record.rows.length === 0) {
-      throw { statusCode: 404, message: 'Borrow record not found or already returned.' };
-    }
+    if (record.rows.length === 0) throw { statusCode: 404, message: 'Borrow record not found or already returned.' };
 
-    // trigger trg_calculate_fine จะคำนวณค่าปรับและ update status อัตโนมัติ
+    // Trigger trg_calculate_fine will auto-calculate fine when return_date is set
     const updated = await client.query(
       `UPDATE library_records SET return_date = CURRENT_DATE WHERE record_id = $1 RETURNING *`,
       [recordId]
     );
 
-    // [FIX] อัปเดต available_copies ที่นี่เพียงที่เดียว (ไม่มี trigger ซ้ำแล้ว)
+    // Increase available copies
     await client.query(
       'UPDATE books SET available_copies = available_copies + 1 WHERE book_id = $1',
       [record.rows[0].book_id]
@@ -166,9 +144,19 @@ const returnBook = async (recordId) => {
 // ─── ALL RECORDS (Admin) ───────────────────────────────────────
 const getAllBorrowRecords = async ({ status = null, page = 1, limit = 30 }) => {
   const offset = (page - 1) * limit;
-  let statusFilter = '';
-  const params = [limit, offset];
-  if (status) { params.push(status); statusFilter = `WHERE lr.status = $${params.length}`; }
+
+  // Build separate param arrays for data query and count query
+  const dataParams = [limit, offset];
+  const countParams = [];
+  let dataFilter = '';
+  let countFilter = '';
+
+  if (status) {
+    dataParams.push(status);
+    dataFilter = `WHERE lr.status = $${dataParams.length}`;
+    countParams.push(status);
+    countFilter = `WHERE lr.status = $1`;
+  }
 
   const [data, count] = await Promise.all([
     db.query(
@@ -186,14 +174,14 @@ const getAllBorrowRecords = async ({ status = null, page = 1, limit = 30 }) => {
        JOIN students s ON lr.student_id = s.student_id
        JOIN users u ON s.user_id = u.user_id
        JOIN books b ON lr.book_id = b.book_id
-       ${statusFilter}
+       ${dataFilter}
        ORDER BY lr.borrow_date DESC
        LIMIT $1 OFFSET $2`,
-      params
+      dataParams
     ),
     db.query(
-      `SELECT COUNT(*) FROM library_records lr ${statusFilter}`,
-      status ? [status] : []
+      `SELECT COUNT(*) FROM library_records lr ${countFilter}`,
+      countParams
     ),
   ]);
 
@@ -207,12 +195,11 @@ const getSettings = async () => {
 };
 
 const updateSettings = async ({ max_days_limit, fine_per_day }) => {
-  // [FIX] ใช้ singleton = TRUE แทน setting_id = 1 ให้สอดคล้องกับ schema
   const result = await db.query(
     `UPDATE library_settings
      SET max_days_limit = COALESCE($1, max_days_limit),
          fine_per_day   = COALESCE($2, fine_per_day)
-     WHERE singleton = TRUE RETURNING *`,
+     WHERE setting_id = 1 RETURNING *`,
     [max_days_limit, fine_per_day]
   );
   return result.rows[0];

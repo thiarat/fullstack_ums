@@ -9,10 +9,10 @@ export class ProfessorApiService extends ApiService {
   getDashboard()                       { return this.get<any>('/professor/dashboard'); }
   getMyCourses()                       { return this.get<any[]>('/professor/courses'); }
   getDeptCourses()                     { return this.get<any[]>('/professor/courses/dept-all'); }
-  getCourseStudents(courseId: number)  { return this.get<any[]>(`/professor/courses/${courseId}/students`); }
+  getCourseStudents(scheduleId: number)  { return this.get<any[]>(`/professor/courses/${scheduleId}/students`); }
   submitGrade(enrollmentId: number, grade: string) { return this.patch(`/professor/grades/${enrollmentId}`, { grade }); }
-  submitBulkGrades(courseId: number, grades: { enrollment_id: number; grade: string }[]) {
-    return this.post(`/professor/courses/${courseId}/grades`, { grades });
+  submitBulkGrades(scheduleId: number, grades: { enrollment_id: number; grade: string }[]) {
+    return this.post(`/professor/courses/${scheduleId}/grades`, { grades });
   }
   getSchedule()                        { return this.get<any[]>('/professor/schedule'); }
   addSchedule(body: any)               { return this.post('/professor/schedule', body); }
@@ -20,4 +20,7 @@ export class ProfessorApiService extends ApiService {
   deleteSchedule(scheduleId: number)   { return this.delete(`/professor/schedule/${scheduleId}`); }
   getExams()                           { return this.get<any[]>('/professor/exams'); }
   createExam(body: any)                { return this.post('/professor/exams', body); }
+  getCourseExams()                     { return this.get<any[]>('/professor/exams/courses'); }
+  updateExam(examId: number, body: any){ return this.put(`/professor/exams/${examId}`, body); }
+  deleteExam(examId: number)           { return this.delete(`/professor/exams/${examId}`); }
 }

@@ -6,7 +6,7 @@ import { ApiService } from './api.service';
 export class LibraryApiService extends ApiService {
   constructor(http: HttpClient) { super(http); }
 
-  getBooks(search = '', page = 1)    { return this.get<any>('/library/books', { search, page }); }
+  getBooks(search = '', page = 1, limit = 100) { return this.get<any>('/library/books', { search, page, limit }); }
   createBook(body: any)              { return this.post('/library/books', body); }
   updateBook(id: number, body: any)  { return this.put(`/library/books/${id}`, body); }
   deleteBook(id: number)             { return this.delete(`/library/books/${id}`); }

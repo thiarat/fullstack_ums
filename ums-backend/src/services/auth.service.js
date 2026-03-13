@@ -14,20 +14,24 @@ const generateTokens = (payload) => {
   return { accessToken, refreshToken };
 };
 
-// bcrypt compare with $2a / $2b prefix fix
+// ─── bcrypt compare with $2a / $2b prefix fix ─────────────────
+// pgcrypto generates $2a$ prefix; bcryptjs expects $2b$
+// Normalize prefix before comparing
 const bcryptCompare = async (plain, hash) => {
   if (!hash) return false;
-  const normalized = hash.startsWith('$2a$') ? '$2b$' + hash.slice(4) : hash;
+  // Normalize $2a$ → $2b$ for bcryptjs compatibility
+  const normalized = hash.startsWith('$2a$')
+    ? '$2b$' + hash.slice(4)
+    : hash;
   return bcrypt.compare(plain, normalized);
 };
 
 const loginUser = async (username, password) => {
   const result = await db.query(
-    // [FIX] ลบ hardcode 'Admin' ออก ใช้ NULL แทนเมื่อไม่มีข้อมูล professor
     `SELECT u.user_id, u.username, u.password_secure, u.is_active,
             r.role_name,
-            p.first_name,
-            p.last_name,
+            COALESCE(p.first_name, 'Admin') as first_name,
+            COALESCE(p.last_name, '')       as last_name,
             p.prof_id
      FROM users u
      JOIN roles r ON u.role_id = r.role_id
@@ -42,7 +46,7 @@ const loginUser = async (username, password) => {
   }
 
   const user = result.rows[0];
-  logger.debug(`Login attempt: ${username} | hash prefix: ${user.password_secure?.slice(0, 7)}`);
+  logger.debug(`Login attempt: ${username} | hash prefix: ${user.password_secure?.slice(0,7)}`);
 
   if (!user.is_active) {
     throw { statusCode: 403, message: 'Account is deactivated. Please contact admin.' };
@@ -61,14 +65,12 @@ const loginUser = async (username, password) => {
   );
 
   const payload = {
-    user_id:    user.user_id,
-    username:   user.username,
-    role:       user.role_name,
-    // [FIX] first_name / last_name จะเป็น null สำหรับ Admin ที่ไม่มีแถวใน professors
-    //       ให้ frontend จัดการ fallback เอง เช่น แสดง username แทน
-    first_name: user.first_name ?? null,
-    last_name:  user.last_name  ?? null,
-    prof_id:    user.prof_id    ?? null,
+    user_id: user.user_id,
+    username: user.username,
+    role: user.role_name,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    prof_id: user.prof_id ?? null,
   };
 
   const tokens = generateTokens(payload);
@@ -96,7 +98,7 @@ const loginStudent = async (username, password) => {
   }
 
   const user = result.rows[0];
-  logger.debug(`Student login: ${username} | hash prefix: ${user.password_secure?.slice(0, 7)}`);
+  logger.debug(`Student login: ${username} | hash prefix: ${user.password_secure?.slice(0,7)}`);
 
   if (!user.is_active) {
     throw { statusCode: 403, message: 'Account is deactivated.' };
@@ -115,12 +117,12 @@ const loginStudent = async (username, password) => {
   );
 
   const payload = {
-    user_id:       user.user_id,
-    username:      user.username,
-    role:          user.role_name,
-    first_name:    user.first_name,
-    last_name:     user.last_name,
-    student_id:    user.student_id,
+    user_id: user.user_id,
+    username: user.username,
+    role: user.role_name,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    student_id: user.student_id,
     profile_image: user.profile_image,
   };
 

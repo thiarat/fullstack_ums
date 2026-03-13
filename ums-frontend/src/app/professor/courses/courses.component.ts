@@ -11,6 +11,12 @@ const DAY_TH: Record<string,string> = {
   Thursday:'พฤหัส',Friday:'ศุกร์',Saturday:'เสาร์',Sunday:'อาทิตย์'
 };
 
+// Time slots available for selection
+const TIME_SLOTS = [
+  { key: 'morning',   label: 'ช่วงเช้า',   sub: '8:00 ถึง 12:00',  start: '08:00', end: '12:00' },
+  { key: 'afternoon', label: 'ช่วงบ่าย',  sub: '13:00 ถึง 17:00', start: '13:00', end: '17:00' },
+];
+
 @Component({
   selector: 'app-professor-courses',
   standalone: true,
@@ -21,7 +27,6 @@ const DAY_TH: Record<string,string> = {
       <div class="main-content">
         <app-topbar title="รายวิชาของฉัน" subtitle="จัดการรายวิชาและตารางสอน" />
         <div class="page-content">
-  <!-- Toolbar เหมือน admin professors -->
   <div class="d-flex gap-2 mb-4 flex-wrap align-items-center">
     <div>
       <h4 class="mb-0 fw-700" style="color:#1e293b">รายวิชาของฉัน</h4>
@@ -41,7 +46,7 @@ const DAY_TH: Record<string,string> = {
     </div>
   } @else {
     <div class="courses-grid">
-      @for (c of courses(); track c.course_id) {
+      @for (c of courses(); track c.schedule_id) {
         <div class="course-card">
           <div class="course-header">
             <div class="course-code">{{ c.course_code }}</div>
@@ -139,14 +144,27 @@ const DAY_TH: Record<string,string> = {
               @for (d of days; track d) { <option [value]="d">{{ dayTh(d) }}</option> }
             </select>
           </div>
-          <div class="form-group">
-            <label>เวลาเริ่ม *</label>
-            <input type="time" [(ngModel)]="schedForm.start_time" class="form-control">
+
+          <!-- Time Slot Selector -->
+          <div class="form-group full-width">
+            <label>เวลาการสอน *</label>
+            <div class="time-slot-group">
+              @for (slot of timeSlots; track slot.key) {
+                <button
+                  type="button"
+                  class="time-slot-btn"
+                  [class.selected]="selectedSlot() === slot.key"
+                  (click)="selectSlot(slot)">
+                  <div class="slot-label">{{ slot.label }}</div>
+                  <div class="slot-time">{{ slot.sub }}</div>
+                </button>
+              }
+            </div>
+            @if (!selectedSlot() && formError()) {
+              <small class="text-danger mt-1">กรุณาเลือกช่วงเวลา</small>
+            }
           </div>
-          <div class="form-group">
-            <label>เวลาสิ้นสุด *</label>
-            <input type="time" [(ngModel)]="schedForm.end_time" class="form-control">
-          </div>
+
           <div class="form-group full-width">
             <label>ห้อง</label>
             <input [(ngModel)]="schedForm.room_number" class="form-control" placeholder="เช่น A301">
@@ -183,7 +201,7 @@ const DAY_TH: Record<string,string> = {
     .btn-outline-full { width:100%; padding:8px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; cursor:pointer; color:#475569; font-weight:600; font-size:.9rem; display:flex; align-items:center; justify-content:center; gap:8px; }
     .btn-outline-full:hover { background:#f8fafc; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000; display:flex; align-items:center; justify-content:center; }
-    .modal-box { background:#fff; border-radius:16px; width:520px; max-width:95vw; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+    .modal-box { background:#fff; border-radius:16px; width:520px; max-width:95vw; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.3); }
     .large-modal { width:700px; }
     .modal-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 0; }
     .modal-header h5 { font-weight:700; margin:0; }
@@ -196,6 +214,18 @@ const DAY_TH: Record<string,string> = {
     .data-table { width:100%; border-collapse:collapse; }
     .data-table th { padding:12px 16px; background:#f8fafc; font-size:.8rem; font-weight:700; color:#64748b; }
     .data-table td { padding:12px 16px; border-top:1px solid #f1f5f9; }
+    /* Time slot buttons */
+    .time-slot-group { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .time-slot-btn {
+      padding:16px; border:2px solid #e2e8f0; border-radius:12px;
+      background:#fff; cursor:pointer; text-align:center; transition:all .18s;
+    }
+    .time-slot-btn:hover { border-color:#93c5fd; background:#eff6ff; }
+    .time-slot-btn.selected { border-color:#16a34a; background:#f0fdf4; }
+    .slot-label { font-weight:700; font-size:.95rem; color:#1e293b; }
+    .time-slot-btn.selected .slot-label { color:#15803d; }
+    .slot-time { font-size:.8rem; color:#64748b; margin-top:4px; }
+    .time-slot-btn.selected .slot-time { color:#16a34a; }
   `]
 })
 export class ProfCoursesComponent implements OnInit {
@@ -212,7 +242,9 @@ export class ProfCoursesComponent implements OnInit {
   editingSchedule = signal<any>(null);
   saving        = signal(false);
   formError     = signal('');
+  selectedSlot  = signal<string>('');
   days = DAYS;
+  timeSlots = TIME_SLOTS;
   schedForm: any = {};
 
   dayTh = (d: string) => DAY_TH[d] || d;
@@ -237,7 +269,6 @@ export class ProfCoursesComponent implements OnInit {
     this.api.getDeptCourses().subscribe({
       next: (r: any) => { this.allCourses.set(r.data ?? []); },
       error: () => {
-        // fallback: ใช้รายวิชาของตัวเองถ้า API ยังไม่มี
         this.api.getMyCourses().subscribe((r: any) => this.allCourses.set(r.data ?? []));
       }
     });
@@ -247,25 +278,36 @@ export class ProfCoursesComponent implements OnInit {
     this.selectedCourse.set(c);
     this.studentsModal.set(true);
     this.studentsLoading.set(true);
-    this.api.getCourseStudents(c.course_id).subscribe({
+    this.api.getCourseStudents(c.schedule_id).subscribe({
       next: (r: any) => { this.students.set(r.data); this.studentsLoading.set(false); },
       error: () => this.studentsLoading.set(false),
     });
   }
 
+  selectSlot(slot: any) {
+    this.selectedSlot.set(slot.key);
+    this.schedForm.start_time = slot.start;
+    this.schedForm.end_time   = slot.end;
+  }
+
   openAddSchedule() {
     this.editingSchedule.set({});
-    this.schedForm = { day_of_week: 'Monday', start_time: '09:00', end_time: '12:00', room_number: '' };
+    this.selectedSlot.set('');
+    this.schedForm = { day_of_week: 'Monday', start_time: '', end_time: '', room_number: '', course_id: '' };
     this.formError.set('');
     this.scheduleModal.set(true);
   }
 
   openEditSchedule(c: any) {
     this.editingSchedule.set(c);
+    // Detect which slot matches
+    const slotKey = c.start_time?.startsWith('08') ? 'morning'
+                  : c.start_time?.startsWith('13') ? 'afternoon' : '';
+    this.selectedSlot.set(slotKey);
     this.schedForm = {
       day_of_week: c.day_of_week || 'Monday',
-      start_time: c.start_time ? c.start_time.slice(0,5) : '09:00',
-      end_time: c.end_time ? c.end_time.slice(0,5) : '12:00',
+      start_time: c.start_time ? c.start_time.slice(0,5) : '',
+      end_time: c.end_time ? c.end_time.slice(0,5) : '',
       room_number: c.room_number || '',
     };
     this.formError.set('');
@@ -273,6 +315,10 @@ export class ProfCoursesComponent implements OnInit {
   }
 
   saveSchedule() {
+    if (!this.schedForm.start_time || !this.schedForm.end_time) {
+      this.formError.set('กรุณาเลือกช่วงเวลาการสอน');
+      return;
+    }
     this.saving.set(true);
     this.formError.set('');
     const isEdit = !!this.editingSchedule()?.schedule_id;

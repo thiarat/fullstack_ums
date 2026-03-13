@@ -69,92 +69,16 @@ import { TopbarComponent } from '../../shared/components/topbar/topbar.component
     </div>
   `,
   styles: [`
-    
-.loading-center { 
-  display: flex; justify-content: center; align-items: center; 
-  padding: 80px; color: #3b82f6; 
-}
-
-
-.stats-grid { 
-  display: grid; 
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
-  gap: 1.5rem; 
-  margin-bottom: 2rem; 
-}
-
-
-.stat-card { 
-  background: #ffffff; 
-  border-radius: 1.25rem; 
-  padding: 1.5rem; 
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  
-  
-  box-shadow: 
-    0 10px 15px -3px rgba(0, 0, 0, 0.05), 
-    0 4px 6px -2px rgba(0, 0, 0, 0.025), 
-    0 25px 50px -12px rgba(59, 130, 246, 0.1), 
-    inset 0 1px 2px rgba(255,255,255,0.9);
-  
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  z-index: 1;
-}
-
-
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 
-    0 20px 25px -5px rgba(0, 0, 0, 0.05), 
-    0 10px 10px -5px rgba(0, 0, 0, 0.02),
-    0 30px 60px -15px rgba(59, 130, 246, 0.15),
-    inset 0 1px 2px rgba(255,255,255,1);
-}
-
-
-.stat-card::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
-  transition: width 0.3s ease;
-}
-.stat-card:hover::before { width: 8px; }
-
-
-.stat-card.green::before { background: linear-gradient(to bottom, #34d399, #10b981); }
-.stat-card.amber::before { background: linear-gradient(to bottom, #fbbf24, #f59e0b); }
-.stat-card.blue::before  { background: linear-gradient(to bottom, #60a5fa, #3b82f6); }
-.stat-card.red::before   { background: linear-gradient(to bottom, #f87171, #ef4444); }
-
-
-.stat-icon { 
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 52px; height: 52px; 
-  border-radius: 1rem; 
-  font-size: 1.5rem; 
-  margin-bottom: 1.2rem;
-}
-
-
-.stat-card.green .stat-icon { color: #10b981; background: #ecfdf5; box-shadow: 0 4px 10px rgba(16,185,129,0.2), inset 0 2px 4px rgba(255,255,255,0.8); }
-.stat-card.amber .stat-icon { color: #f59e0b; background: #fffbeb; box-shadow: 0 4px 10px rgba(245,158,11,0.2), inset 0 2px 4px rgba(255,255,255,0.8); }
-.stat-card.blue .stat-icon  { color: #3b82f6; background: #eff6ff; box-shadow: 0 4px 10px rgba(59,130,246,0.2), inset 0 2px 4px rgba(255,255,255,0.8); }
-.stat-card.red .stat-icon   { color: #ef4444; background: #fef2f2; box-shadow: 0 4px 10px rgba(239,68,68,0.2), inset 0 2px 4px rgba(255,255,255,0.8); }
-
-
-.stat-value { 
-  font-size: 2.25rem; 
-  font-weight: 800; 
-  color: #0f172a; 
-  line-height: 1.1;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.05); 
-}
-.stat-label { 
-  font-size: 0.95rem; 
-  font-weight: 500; 
-  color: #64748b; 
-  margin-top: 8px; 
-}
+    .loading-center { display:flex; justify-content:center; padding:80px; }
+    .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:1rem; }
+    .stat-card { background:#fff; border-radius:var(--radius-lg); padding:1.25rem; box-shadow:var(--shadow-sm); border-top:4px solid #e2e8f0; }
+    .stat-card.green { border-top-color:#10b981; }
+    .stat-card.amber { border-top-color:#f59e0b; }
+    .stat-card.blue  { border-top-color:#3b82f6; }
+    .stat-card.red   { border-top-color:#ef4444; }
+    .stat-icon { font-size:1.6rem; margin-bottom:.5rem; }
+    .stat-value { font-size:2rem; font-weight:800; color:#1e293b; }
+    .stat-label { font-size:.82rem; color:#94a3b8; margin-top:4px; }
   `]
 })
 export class StudentDashboardComponent implements OnInit {
