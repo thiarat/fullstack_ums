@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -26,9 +26,9 @@ const DAY_TH: Record<string,string> = {
             <div class="search-box" style="max-width:280px;flex:1">
               <i class="bi bi-search"></i>
               <input type="text" class="form-control" [(ngModel)]="search"
-                     (ngModelChange)="load()" placeholder="ค้นหาชื่อ, email...">
+                     (ngModelChange)="onFilterChange()" placeholder="ค้นหาชื่อ, email...">
             </div>
-            <select class="form-select" style="max-width:180px" [(ngModel)]="deptFilter" (ngModelChange)="load()">
+            <select class="form-select" style="max-width:180px" [(ngModel)]="deptFilter" (ngModelChange)="onFilterChange()">
               <option value="">ทุกแผนก</option>
               <option *ngFor="let d of depts()" [value]="d.dept_id">{{ d.name }}</option>
             </select>
@@ -41,7 +41,7 @@ const DAY_TH: Record<string,string> = {
             <div *ngIf="loading()" class="loading-overlay"><div class="spinner-border"></div></div>
             <div class="table-responsive" *ngIf="!loading()">
               <table class="table mb-0">
-                <thead><tr><th>ชื่อ-นามสกุล</th><th>Email</th><th>แผนก</th><th>สถานะ</th><th></th></tr></thead>
+                <thead><tr><th>ชื่อ-นามสกุล</th><th>Email</th><th>แผนก</th><th class="text-center">จำนวนวิชาที่สอน</th><th>สถานะ</th><th></th></tr></thead>
                 <tbody>
                   <tr *ngFor="let p of professors()" class="stagger-item clickable-row" (click)="viewSchedule(p)">
                     <td>
@@ -51,6 +51,9 @@ const DAY_TH: Record<string,string> = {
                     </td>
                     <td class="text-muted" style="font-size:.82rem">{{ p.email }}</td>
                     <td><span class="badge bg-light text-dark border">{{ p.department || '-' }}</span></td>
+                    <td class="text-center">
+                      <span class="badge bg-info text-dark">{{ p.course_count ?? 0 }} วิชา</span>
+                    </td>
                     <td>
                       <span class="badge" [class]="p.is_active ? 'bg-success' : 'bg-secondary'">
                         {{ p.is_active ? 'Active' : 'Inactive' }}
@@ -64,6 +67,10 @@ const DAY_TH: Record<string,string> = {
                         <button class="btn btn-icon btn-sm btn-outline-warning" title="รีเซ็ตรหัส" (click)="openReset(p)">
                           <i class="bi bi-key"></i>
                         </button>
+                        <button class="btn btn-icon btn-sm" [class]="p.is_active ? 'btn-outline-secondary' : 'btn-outline-success'"
+                          title="{{ p.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน' }}" (click)="toggleStatus(p)">
+                          <i class="bi" [class]="p.is_active ? 'bi-toggle-on' : 'bi-toggle-off'"></i>
+                        </button>
                         <button class="btn btn-icon btn-sm btn-outline-danger" title="ลบ" (click)="deleteProf(p)">
                           <i class="bi bi-trash"></i>
                         </button>
@@ -75,6 +82,15 @@ const DAY_TH: Record<string,string> = {
             </div>
             <div class="empty-state" *ngIf="!loading() && !professors().length">
               <i class="bi bi-person-x"></i><p>ยังไม่มีอาจารย์</p>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mt-3" *ngIf="!loading() && professors().length > 0">
+            <span class="text-muted small">แสดง {{ professors().length }} จาก {{ total() }} รายการ</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" [disabled]="currentPage() === 1" (click)="goPage(currentPage()-1)">‹</button>
+              <button *ngFor="let p of pages()" class="btn btn-sm" [class]="p === currentPage() ? 'btn-primary' : 'btn-outline-secondary'" (click)="goPage(p)">{{ p }}</button>
+              <button class="btn btn-sm btn-outline-secondary" [disabled]="currentPage() === totalPages()" (click)="goPage(currentPage()+1)">›</button>
             </div>
           </div>
 
@@ -237,6 +253,14 @@ export class AdminProfessorsComponent implements OnInit {
   professors   = signal<any[]>([]);
   depts        = signal<any[]>([]);
   loading      = signal(true);
+  total        = signal(0);
+  currentPage  = signal(1);
+  totalPages   = computed(() => Math.max(1, Math.ceil(this.total() / 20)));
+  pages        = computed(() => {
+    const t = this.totalPages(), c = this.currentPage();
+    const start = Math.max(1, Math.min(c - 2, t - 4));
+    return Array.from({ length: Math.min(5, t) }, (_, i) => start + i);
+  });
   search       = ''; deptFilter: any = '';
   showForm     = signal(false);
   editingProf  = signal<any>(null);
@@ -256,17 +280,25 @@ export class AdminProfessorsComponent implements OnInit {
 
   ngOnInit() { this.loadDepts(); this.load(); }
 
+  onFilterChange() { this.currentPage.set(1); this.load(); }
+
   loadDepts() {
     this.api.getDepartments().subscribe((r: any) => this.depts.set(r.data ?? []));
   }
 
   load() {
     this.loading.set(true);
-    this.api.getProfessors({ search: this.search, dept_id: this.deptFilter }).subscribe({
-      next: (r: any) => { this.professors.set(r.data?.data ?? r.data ?? []); this.loading.set(false); },
+    this.api.getProfessors({ search: this.search, dept_id: this.deptFilter, page: this.currentPage(), limit: 20 }).subscribe({
+      next: (r: any) => {
+        this.professors.set(r.data?.data ?? []);
+        this.total.set(r.data?.total ?? 0);
+        this.loading.set(false);
+      },
       error: () => this.loading.set(false),
     });
   }
+
+  goPage(p: number) { this.currentPage.set(p); this.load(); }
 
   viewSchedule(p: any) {
     this.scheduleModal.set(p);
@@ -296,6 +328,10 @@ export class AdminProfessorsComponent implements OnInit {
       next: () => { this.showForm.set(false); this.saving.set(false); this.load(); },
       error: (e: any) => { this.formErr.set(e.error?.message || 'เกิดข้อผิดพลาด'); this.saving.set(false); },
     });
+  }
+
+  toggleStatus(p: any) {
+    this.api.updateProfessorStatus(p.prof_id, !p.is_active).subscribe({ next: () => this.load() });
   }
 
   deleteProf(p: any) {

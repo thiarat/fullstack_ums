@@ -56,6 +56,11 @@ import { AdminApiService } from '../../core/services/admin-api.service';
       <input type="text" class="form-control" [(ngModel)]="searchQuery"
              (ngModelChange)="onSearch()" placeholder="ค้นหาชื่อ, รหัส, อีเมล...">
     </div>
+    <select class="form-select" style="max-width:160px" [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()">
+      <option value="">ทุกสถานะ</option>
+      <option value="true">Active</option>
+      <option value="false">Inactive</option>
+    </select>
     <button class="btn btn-primary ms-auto" (click)="openCreateModal()">
       <i class="bi bi-person-plus me-1"></i> เพิ่มนักศึกษา
     </button>
@@ -67,7 +72,7 @@ import { AdminApiService } from '../../core/services/admin-api.service';
     <div class="card">
       <div class="table-responsive">
         <table class="table mb-0">
-          <thead><tr><th>นักศึกษา</th><th>รหัส / อีเมล</th><th>วันที่ลงทะเบียน</th><th>สถานะ</th><th></th></tr></thead>
+          <thead><tr><th>นักศึกษา</th><th>รหัส / อีเมล</th><th>วันที่ลงทะเบียน</th><th class="text-center">จำนวนรายวิชาที่ลงทะเบียน</th><th>สถานะ</th><th></th></tr></thead>
           <tbody>
             @for (s of students(); track s.student_id) {
               <tr class="clickable-row stagger-item" (click)="viewSchedule(s)" title="คลิกดูตารางเรียน">
@@ -81,6 +86,9 @@ import { AdminApiService } from '../../core/services/admin-api.service';
                   <br><small class="text-muted">{{ s.email }}</small>
                 </td>
                 <td>{{ s.enrollment_date | date:'dd/MM/yyyy' }}</td>
+                <td class="text-center">
+                  <span class="badge bg-info text-dark">{{ s.enrollment_count ?? 0 }} วิชา</span>
+                </td>
                 <td>
                   <span class="badge" [class]="s.is_active ? 'bg-success' : 'bg-secondary'">
                     {{ s.is_active ? 'Active' : 'Inactive' }}
@@ -266,6 +274,7 @@ export class AdminStudentsComponent implements OnInit {
   total       = signal(0);
   currentPage = signal(1);
   searchQuery = '';
+  statusFilter = '';
   private searchTimer: any;
 
   scheduleModal   = signal<any>(null);
@@ -292,7 +301,9 @@ export class AdminStudentsComponent implements OnInit {
 
   loadStudents() {
     this.loading.set(true);
-    this.api.getStudents({ page: this.currentPage(), limit: 20, search: this.searchQuery }).subscribe({
+    const params: any = { page: this.currentPage(), limit: 20, search: this.searchQuery };
+    if (this.statusFilter !== '') params.is_active = this.statusFilter;
+    this.api.getStudents(params).subscribe({
       next: (r: any) => { this.students.set(r.data.data); this.total.set(r.data.total); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -306,6 +317,8 @@ export class AdminStudentsComponent implements OnInit {
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => { this.currentPage.set(1); this.loadStudents(); }, 400);
   }
+
+  onFilterChange() { this.currentPage.set(1); this.loadStudents(); }
 
   goPage(p: number) { this.currentPage.set(p); this.loadStudents(); }
 

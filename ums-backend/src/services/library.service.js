@@ -29,16 +29,21 @@ const createBook = async ({ isbn, title, author, total_copies = 1, description =
 
 const updateBook = async (bookId, body) => {
   const { isbn, title, author, total_copies, description, chapters } = body;
+  // When total_copies changes, recalculate available_copies = new total - currently borrowed
+  const availableExpr = total_copies != null
+    ? `, available_copies = $4 - (SELECT COUNT(*) FROM library_records WHERE book_id = $7 AND status = 'Borrowed')`
+    : '';
   const result = await db.query(
     `UPDATE books SET
        isbn          = COALESCE($1, isbn),
        title         = COALESCE($2, title),
        author        = COALESCE($3, author),
-       total_copies  = COALESCE($4, total_copies),
+       total_copies  = COALESCE($4, total_copies)
+       ${availableExpr},
        description   = COALESCE($5, description),
        chapters      = COALESCE($6, chapters)
      WHERE book_id = $7 RETURNING *`,
-    [isbn, title, author, total_copies, description ?? null, chapters ? JSON.stringify(chapters) : null, bookId]
+    [isbn, title, author, total_copies ?? null, description ?? null, chapters ? JSON.stringify(chapters) : null, bookId]
   );
   if (result.rows.length === 0) throw { statusCode: 404, message: 'Book not found.' };
   return result.rows[0];

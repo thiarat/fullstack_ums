@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -24,9 +24,9 @@ const DAY_TH: Record<string,string> = {
           <div class="d-flex gap-2 mb-3 flex-wrap">
             <div class="search-box" style="max-width:320px;flex:1">
               <i class="bi bi-search"></i>
-              <input class="form-control" [(ngModel)]="search" (ngModelChange)="load()" placeholder="ค้นหารหัสวิชา, ชื่อ, อาจารย์...">
+              <input class="form-control" [(ngModel)]="search" (ngModelChange)="onFilterChange()" placeholder="ค้นหารหัสวิชา, ชื่อ, อาจารย์...">
             </div>
-            <select class="form-select" style="max-width:200px" [(ngModel)]="deptFilter" (ngModelChange)="load()">
+            <select class="form-select" style="max-width:200px" [(ngModel)]="deptFilter" (ngModelChange)="onFilterChange()">
               <option value="">ทุกแผนก</option>
               <option *ngFor="let d of depts()" [value]="d.dept_id">{{ d.name }}</option>
             </select>
@@ -73,6 +73,15 @@ const DAY_TH: Record<string,string> = {
             </div>
             <div class="empty-state" *ngIf="!loading() && !rows().length">
               <i class="bi bi-person-video2"></i><p>ยังไม่มีข้อมูล</p>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mt-3" *ngIf="!loading() && rows().length > 0">
+            <span class="text-muted small">แสดง {{ rows().length }} จาก {{ total() }} รายการ</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" [disabled]="currentPage() === 1" (click)="goPage(currentPage()-1)">‹</button>
+              <button *ngFor="let p of pages()" class="btn btn-sm" [class]="p === currentPage() ? 'btn-primary' : 'btn-outline-secondary'" (click)="goPage(p)">{{ p }}</button>
+              <button class="btn btn-sm btn-outline-secondary" [disabled]="currentPage() === totalPages()" (click)="goPage(currentPage()+1)">›</button>
             </div>
           </div>
 
@@ -151,9 +160,17 @@ const DAY_TH: Record<string,string> = {
   `]
 })
 export class AdminCourseProfsComponent implements OnInit {
-  loading  = signal(true);
-  rows     = signal<any[]>([]);
-  depts    = signal<any[]>([]);
+  loading     = signal(true);
+  rows        = signal<any[]>([]);
+  depts       = signal<any[]>([]);
+  total       = signal(0);
+  currentPage = signal(1);
+  totalPages  = computed(() => Math.max(1, Math.ceil(this.total() / 25)));
+  pages       = computed(() => {
+    const t = this.totalPages(), c = this.currentPage();
+    const start = Math.max(1, Math.min(c - 2, t - 4));
+    return Array.from({ length: Math.min(5, t) }, (_, i) => start + i);
+  });
   studModal   = signal<any>(null);
   studData    = signal<any[]>([]);
   studLoading = signal(false);
@@ -170,14 +187,17 @@ export class AdminCourseProfsComponent implements OnInit {
 
   load() {
     this.loading.set(true);
-    const params: any = {};
+    const params: any = { page: this.currentPage(), limit: 25 };
     if (this.search) params.search = this.search;
     if (this.deptFilter) params.dept_id = this.deptFilter;
     this.api.getCourseProfList(params).subscribe({
-      next: r => { this.rows.set(r.data ?? []); this.loading.set(false); },
+      next: (r: any) => { this.rows.set(r.data?.data ?? []); this.total.set(r.data?.total ?? 0); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
   }
+
+  goPage(p: number) { this.currentPage.set(p); this.load(); }
+  onFilterChange() { this.currentPage.set(1); this.load(); }
 
   viewStudents(row: any) {
     this.studModal.set(row);

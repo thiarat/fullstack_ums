@@ -39,6 +39,9 @@ export class AdminApiService extends ApiService {
   getProfSchedule(profId: number)      { return this.get<any>(`/admin/professors/${profId}/schedule`); }
   createProfessor(body: any)           { return this.post<any>('/admin/users', body); }
   updateProfessor(profId: number, body: any) { return this.put<any>(`/admin/professors/${profId}`, body); }
+  updateProfessorStatus(profId: number, isActive: boolean) {
+    return this.patch(`/admin/professors/${profId}/status`, { is_active: isActive });
+  }
   getProfessors(pageOrParams: any = 1, limit = 20, search = '', dept_id?: number) {
     const params = typeof pageOrParams === 'object'
       ? pageOrParams
@@ -69,7 +72,10 @@ export class AdminApiService extends ApiService {
   deleteCourse(id: number) { return this.delete<any>(`/admin/courses/${id}`); }
 
   // Exam Schedules
+  getNoExamList() { return this.get<any>('/admin/exam-schedules/no-exam'); }
+  getExamSummary() { return this.get<any>('/admin/exam-schedules/summary'); }
   getExamSchedules(params: any = {}) { return this.get<any>('/admin/exam-schedules', params); }
+  createExamSchedule(body: any) { return this.post<any>('/admin/exam-schedules', body); }
   updateExamSchedule(examId: number, body: any) { return this.put<any>(`/admin/exam-schedules/${examId}`, body); }
   deleteExamSchedule(examId: number) { return this.delete<any>(`/admin/exam-schedules/${examId}`); }
 

@@ -76,6 +76,11 @@ exports.rejectPasswordReset = wrap(async (req) => {
 // Professors
 exports.getProfessors    = wrap(async (req) => adminService.getAllProfessors(req.query));
 exports.getProfSchedule  = wrap(async (req) => adminService.getProfSchedule(+req.params.id));
+exports.updateProfessorStatus = wrap(async (req) => {
+  const r = await adminService.updateProfessorStatus(+req.params.id, req.body.is_active);
+  await logAction(req.user.user_id, `UPDATE professor status → ${req.body.is_active}`, 'users', +req.params.id);
+  return r;
+});
 
 // Departments
 exports.getDepartments    = wrap(async (req) => adminService.getAllDepartments());
@@ -120,6 +125,11 @@ exports.getCourseProfStudents = wrap(async (req) => adminService.getCourseProfSt
 
 // Exam Schedules
 exports.getExamSchedules = wrap(async (req) => adminService.getAllExamSchedules(req.query));
+exports.createExamSchedule = wrap(async (req) => {
+  const r = await adminService.adminCreateExamSchedule(req.body);
+  await logAction(req.user.user_id, `ADMIN_CREATE_EXAM schedule_id=${req.body.schedule_id} type=${req.body.exam_type}`, 'exam_schedules', r.exam_id);
+  return r;
+});
 exports.updateExamSchedule = wrap(async (req) => {
   const r = await adminService.adminUpdateExamSchedule(+req.params.examId, req.body);
   await logAction(req.user.user_id, `ADMIN_UPDATE_EXAM id=${req.params.examId}`, 'exam_schedules', +req.params.examId);
@@ -130,6 +140,10 @@ exports.deleteExamSchedule = wrap(async (req) => {
   await logAction(req.user.user_id, `ADMIN_DELETE_EXAM id=${req.params.examId}`, 'exam_schedules', +req.params.examId);
   return r;
 });
+
+// Exam Summary
+exports.getExamSummary  = wrap(async (req) => adminService.getExamSummary());
+exports.getNoExamList   = wrap(async (req) => adminService.getNoExamList());
 
 // Logs
 exports.getSystemLogs = wrap(async (req) => adminService.getSystemLogs(req.query));

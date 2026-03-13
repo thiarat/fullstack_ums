@@ -29,6 +29,7 @@ router.post('/password-reset-requests/:requestId/reject',  adminCtrl.rejectPassw
 // Professors
 router.get('/professors',                            adminCtrl.getProfessors);
 router.get('/professors/:id/schedule',               adminCtrl.getProfSchedule);   // popup ตารางสอน
+router.patch('/professors/:id/status',               adminCtrl.updateProfessorStatus);
 
 // Course schedule popup
 router.get('/courses/:id/schedule',                  adminCtrl.getCourseSchedule);
@@ -50,7 +51,10 @@ router.get('/courses-profs',                              adminCtrl.getCoursePro
 router.get('/courses-profs/:scheduleId/students',         adminCtrl.getCourseProfStudents);
 
 // Exam Schedules
+router.get('/exam-schedules/summary',      adminCtrl.getExamSummary);      // must be before /:examId
+router.get('/exam-schedules/no-exam',      adminCtrl.getNoExamList);       // must be before /:examId
 router.get('/exam-schedules',              adminCtrl.getExamSchedules);
+router.post('/exam-schedules',             adminCtrl.createExamSchedule);
 router.put('/exam-schedules/:examId',      adminCtrl.updateExamSchedule);
 router.delete('/exam-schedules/:examId',   adminCtrl.deleteExamSchedule);
 

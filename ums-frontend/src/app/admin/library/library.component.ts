@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -40,7 +40,7 @@ import { AdminApiService } from '../../core/services/admin-api.service';
             <div class="d-flex gap-2 mb-3">
               <div class="search-box" style="max-width:300px;flex:1">
                 <i class="bi bi-search"></i>
-                <input class="form-control" [(ngModel)]="bookSearch" (ngModelChange)="loadBooks()" placeholder="ค้นหาชื่อหนังสือ, ผู้แต่ง, ISBN...">
+                <input class="form-control" [(ngModel)]="bookSearch" (ngModelChange)="onBookSearchChange()" placeholder="ค้นหาชื่อหนังสือ, ผู้แต่ง, ISBN...">
               </div>
               <button class="btn btn-primary ms-auto" (click)="openBookModal()">
                 <i class="bi bi-plus-lg me-1"></i> เพิ่มหนังสือ
@@ -72,6 +72,14 @@ import { AdminApiService } from '../../core/services/admin-api.service';
                 </table>
               </div>
               <div class="empty-state" *ngIf="!books().length"><i class="bi bi-books"></i><p>ไม่พบหนังสือ</p></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-3" *ngIf="books().length > 0">
+              <span class="text-muted small">แสดง {{ books().length }} จาก {{ bookTotal() }} รายการ</span>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" [disabled]="bookPage() === 1" (click)="goBookPage(bookPage()-1)">‹</button>
+                <button *ngFor="let p of bookPages()" class="btn btn-sm" [class]="p === bookPage() ? 'btn-primary' : 'btn-outline-secondary'" (click)="goBookPage(p)">{{ p }}</button>
+                <button class="btn btn-sm btn-outline-secondary" [disabled]="bookPage() === bookTotalPages()" (click)="goBookPage(bookPage()+1)">›</button>
+              </div>
             </div>
           }
 
@@ -497,6 +505,14 @@ import { AdminApiService } from '../../core/services/admin-api.service';
 export class AdminLibraryComponent implements OnInit {
   tab = signal<'books'|'records'|'borrow'>('books');
   books = signal<any[]>([]);
+  bookTotal     = signal(0);
+  bookPage      = signal(1);
+  bookTotalPages = computed(() => Math.max(1, Math.ceil(this.bookTotal() / 20)));
+  bookPages      = computed(() => {
+    const t = this.bookTotalPages(), c = this.bookPage();
+    const start = Math.max(1, Math.min(c - 2, t - 4));
+    return Array.from({ length: Math.min(5, t) }, (_, i) => start + i);
+  });
   records = signal<any[]>([]);
   filteredRecords = signal<any[]>([]);
   showBookModal = signal(false);
@@ -505,6 +521,7 @@ export class AdminLibraryComponent implements OnInit {
   bookSearch = ''; statusFilter = ''; recordSearch = '';
   bookForm: any = { isbn: '', title: '', author: '', total_copies: 1, description: '', chapters: null };
   chaptersText = '';
+  private bookSearchTimer: any;
 
   // borrow queue
   studentQuery = ''; bookQuery = '';
@@ -522,9 +539,17 @@ export class AdminLibraryComponent implements OnInit {
   switchRecords() { this.tab.set('records'); this.loadRecords(); }
 
   loadBooks() {
-    this.api.getBooks(this.bookSearch).subscribe(r => {
-      if (r.data) this.books.set((r.data as any).data ?? r.data);
+    this.api.getBooks(this.bookSearch, this.bookPage()).subscribe((r: any) => {
+      this.books.set(r.data?.data ?? []);
+      this.bookTotal.set(r.data?.total ?? 0);
     });
+  }
+
+  goBookPage(p: number) { this.bookPage.set(p); this.loadBooks(); }
+
+  onBookSearchChange() {
+    clearTimeout(this.bookSearchTimer);
+    this.bookSearchTimer = setTimeout(() => { this.bookPage.set(1); this.loadBooks(); }, 400);
   }
 
   loadRecords() {
