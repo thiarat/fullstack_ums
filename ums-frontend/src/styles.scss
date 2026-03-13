@@ -366,7 +366,60 @@ code, .mono {
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 // ─── Responsive ──────────────────────────────────────────────
+
+// Tablet (769–1024px): shrink sidebar, reduce padding
+@media (max-width: 1024px) and (min-width: 769px) {
+  :root { --sidebar-width: 220px; }
+  .page-content { padding: 1.5rem; padding-top: calc(var(--topbar-height) + 1.25rem); }
+  .stat-card .stat-value { font-size: 1.6rem; }
+}
+
+// Mobile (≤768px): hide sidebar, full-width layout
 @media (max-width: 768px) {
-  .main-content { margin-left: 0; }
-  .page-content { padding: 1rem; padding-top: calc(var(--topbar-height) + 1rem); }
+  :root { --sidebar-width: 260px; } // keep sidebar width, just hidden off-screen
+
+  .main-content { margin-left: 0 !important; }
+
+  .page-content {
+    padding: 1rem;
+    padding-top: calc(var(--topbar-height) + .875rem);
+  }
+
+  // Stat cards: 2 columns on mobile
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: .75rem !important;
+  }
+  .stat-card {
+    padding: 1rem;
+    .stat-value { font-size: 1.6rem; }
+    .stat-icon  { width: 38px; height: 38px; font-size: 1rem; margin-bottom: .75rem; }
+  }
+
+  // Tables: make scrollable horizontally
+  .card { border-radius: var(--radius-md); }
+  .table-responsive { -webkit-overflow-scrolling: touch; }
+
+  // Toolbar rows: stack on very small screens
+  .d-flex.flex-wrap {
+    .search-box { max-width: 100% !important; }
+    .form-select { max-width: 100% !important; }
+    .btn.ms-auto { margin-left: 0 !important; width: 100%; justify-content: center; }
+  }
+
+  // Modals: full-width on mobile
+  .modal-dialog { margin: .5rem; max-width: calc(100vw - 1rem); }
+
+  // Page title smaller on mobile
+  .page-title { font-size: .95rem !important; }
+  .page-subtitle { display: none; }
+
+  // Hide less critical table columns via utility
+  .d-mobile-none { display: none !important; }
+}
+
+// Extra small (≤480px): single column stat cards
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: repeat(1, 1fr) !important; }
+  .page-content { padding: .75rem; padding-top: calc(var(--topbar-height) + .75rem); }
 }

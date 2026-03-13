@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { AdminApiService } from '../../../core/services/admin-api.service';
+import { UiStateService } from '../../../core/services/ui-state.service';
 
 interface NavItem { label: string; icon: string; path: string; badgeKey?: string; }
 
@@ -11,13 +12,22 @@ interface NavItem { label: string; icon: string; path: string; badgeKey?: string
   standalone: true,
   imports: [CommonModule, RouterLink, RouterLinkActive],
   template: `
-    <nav class="sidebar">
+    <!-- Mobile overlay backdrop -->
+    @if (ui.sidebarOpen()) {
+      <div class="sidebar-overlay" (click)="ui.close()"></div>
+    }
+
+    <nav class="sidebar" [class.open]="ui.sidebarOpen()">
       <div class="sidebar-brand">
         <div class="brand-icon"><i class="bi bi-mortarboard-fill"></i></div>
         <div class="brand-text">
           <span class="brand-name">UMS</span>
           <span class="brand-sub">University System</span>
         </div>
+        <!-- Close button (mobile only) -->
+        <button class="sidebar-close-btn" (click)="ui.close()" aria-label="ปิดเมนู">
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
       <div class="sidebar-user">
@@ -35,7 +45,8 @@ interface NavItem { label: string; icon: string; path: string; badgeKey?: string
         <a *ngFor="let item of navItems()"
            class="nav-item"
            [routerLink]="item.path"
-           routerLinkActive="active">
+           routerLinkActive="active"
+           (click)="ui.close()">
           <i class="bi" [class]="item.icon"></i>
           <span class="nav-label">{{ item.label }}</span>
           <span class="nav-badge" *ngIf="item.badgeKey && getBadge(item.badgeKey) > 0">
@@ -53,11 +64,22 @@ interface NavItem { label: string; icon: string; path: string; badgeKey?: string
     </nav>
   `,
   styles: [`
+    /* ── Overlay (mobile only) ─────────────────────────── */
+    .sidebar-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 199;
+      backdrop-filter: blur(2px);
+    }
+
+    /* ── Sidebar ────────────────────────────────────────── */
     .sidebar {
       width: var(--sidebar-width); height: 100vh;
       background: var(--sidebar-bg);
       display: flex; flex-direction: column;
-      position: fixed; left: 0; top: 0; z-index: 100;
+      position: fixed; left: 0; top: 0; z-index: 200;
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
     }
     .sidebar-brand {
       padding: 1.25rem; display: flex; align-items: center; gap: .875rem;
@@ -72,6 +94,19 @@ interface NavItem { label: string; icon: string; path: string; badgeKey?: string
     }
     .brand-name { display: block; color: white; font-weight: 700; font-size: 1rem; }
     .brand-sub  { display: block; color: #475569; font-size: .68rem; }
+    .brand-text { flex: 1; }
+
+    /* Close button — hidden on desktop */
+    .sidebar-close-btn {
+      display: none;
+      background: none; border: none;
+      color: #64748b; font-size: 1.1rem; cursor: pointer;
+      padding: .25rem; border-radius: 6px;
+      transition: color .15s, background .15s;
+      flex-shrink: 0;
+      &:hover { color: #e2e8f0; background: rgba(255,255,255,.08); }
+    }
+
     .sidebar-user {
       padding: 1rem 1.25rem; display: flex; align-items: center; gap: .75rem;
       border-bottom: 1px solid rgba(255,255,255,.06);
@@ -122,13 +157,21 @@ interface NavItem { label: string; icon: string; path: string; badgeKey?: string
     .logout-btn { color: #64748b; text-align: left;
       &:hover { color: #ef4444 !important; background: rgba(239,68,68,.1) !important; }
     }
+
+    /* ── Mobile: sidebar as drawer ────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar-overlay { display: block; }
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.3); }
+      .sidebar-close-btn { display: flex; align-items: center; justify-content: center; }
+    }
   `]
 })
 export class SidebarComponent implements OnInit {
   private adminApi = inject(AdminApiService);
+  ui   = inject(UiStateService);
 
   badges: Record<string, number> = {};
-
   getBadge(key: string): number { return this.badges[key] ?? 0; }
 
   initials = computed(() => {
@@ -158,10 +201,10 @@ export class SidebarComponent implements OnInit {
       { label: 'กำหนดวันสอบ',  icon: 'bi-calendar-event', path: '/professor/exam-schedules' },
     ];
     if (role === 'Student') return [
-      { label: 'Dashboard',    icon: 'bi-speedometer2',  path: '/student/dashboard' },
-      { label: 'ลงทะเบียน',   icon: 'bi-journal-plus',  path: '/student/enrollments' },
-      { label: 'ตารางเรียน',  icon: 'bi-calendar3',     path: '/student/schedule' },
-      { label: 'ผลการเรียน',  icon: 'bi-bar-chart',     path: '/student/grades' },
+      { label: 'Dashboard',    icon: 'bi-speedometer2',     path: '/student/dashboard' },
+      { label: 'ลงทะเบียน',   icon: 'bi-journal-plus',     path: '/student/enrollments' },
+      { label: 'ตารางเรียน',  icon: 'bi-calendar3',        path: '/student/schedule' },
+      { label: 'ผลการเรียน',  icon: 'bi-bar-chart',        path: '/student/grades' },
       { label: 'ห้องสมุด',    icon: 'bi-journal-bookmark', path: '/student/library' },
     ];
     return [];
@@ -177,9 +220,7 @@ export class SidebarComponent implements OnInit {
 
   fetchPendingCount() {
     this.adminApi.getPasswordResetRequests().subscribe({
-      next: (res: any) => {
-        this.badges['passwordReset'] = (res.data || []).length;
-      },
+      next: (res: any) => { this.badges['passwordReset'] = (res.data || []).length; },
       error: () => {}
     });
   }
